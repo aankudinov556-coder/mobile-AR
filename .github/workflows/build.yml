@@ -1,9 +1,7 @@
-name: Build Windows installer
+name: Legacy Electron build (manual)
 
+# Старая Electron-версия (v1). Новая версия на C# собирается desktop.yml и android.yml.
 on:
-  push:
-    branches: ['**']
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:

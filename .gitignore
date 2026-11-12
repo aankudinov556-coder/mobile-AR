@@ -5,3 +5,9 @@ out/
 .DS_Store
 Thumbs.db
 /tools/preview/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/

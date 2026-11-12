@@ -19,8 +19,8 @@ from PIL import Image
 
 W, H = 64, 72
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT_DIR = os.path.join(ROOT, "src", "renderer", "assets", "vera")
-ASSETS = os.path.join(ROOT, "src", "renderer", "assets")
+OUT_DIR = os.path.join(ROOT, "assets", "vera")   # общие слои для ПК и Android
+ASSETS = os.path.join(ROOT, "assets")
 BUILD = os.path.join(ROOT, "build")
 PREVIEW = os.path.join(ROOT, "tools", "preview")
 
@@ -239,7 +239,7 @@ def neck():
     return l
 
 
-def body(pose):
+def body(pose, sitting=False):
     l = Layer()
     # куртка-оверсайз (капюшон за шеей)
     l.ellipse(32, 42.5, 10.5, 3, JACKET_S, "jacket")
@@ -261,6 +261,13 @@ def body(pose):
     # подол куртки
     l.hline(21, 43, 58, JACKET_S, "jacket", clip={"jacket"})
     # юбка
+    if sitting:
+        # сидя юбка расходится шире и ложится на край панели
+        l.poly([(22, 57), (42, 57), (46, 62), (18, 62)], SKIRT, "skirt")
+        for x in (23, 28, 35, 40):
+            l.vline(x, 59, 62, SKIRT_S, "skirt", clip={"skirt"})
+        l.hline(19, 45, 62, SKIRT_S, "skirt", clip={"skirt"})
+        return l
     l.poly([(23, 57), (41, 57), (43, 62), (21, 62)], SKIRT, "skirt")
     for x in (25, 29, 34, 38):
         l.vline(x, 59, 62, SKIRT_S, "skirt", clip={"skirt"})
@@ -607,6 +614,63 @@ def blush_layer(level):
 POSES = ["idle", "wave", "giggle", "think"]
 
 
+def legs_sit(frame):
+    """Свисающие ноги сидящей Веры. frame 0 — спокойно, 1 — болтает левой, 2 — правой."""
+    l = Layer()
+
+    def leg(x0, kick):
+        if not kick:
+            l.rect(x0, 60, x0 + 4, 65, SKIN, "skin")
+            l.vline(x0 + 4 if x0 < 32 else x0, 60, 65, SKIN_S, "skin")
+            l.rect(x0, 64, x0 + 4, 65, SOCK, "sock")
+            l.poly([(x0 - 1, 66), (x0 + 5, 66), (x0 + 6, 69), (x0 + 6, 70), (x0 - 2, 70), (x0 - 2, 68)], BOOT, "boot")
+            l.hline(x0, x0 + 2, 67, BOOT_H, "boot")
+        else:
+            # нога вынесена вперёд: голень короче, носок ботинка смотрит на зрителя
+            l.rect(x0, 60, x0 + 4, 62, SKIN, "skin")
+            l.rect(x0, 62, x0 + 4, 63, SOCK, "sock")
+            l.ellipse(x0 + 2.5, 65.5, 3.6, 2.7, BOOT, "boot")
+            l.pts([(x0 + 1, 64), (x0 + 2, 64), (x0 + 1, 65)], BOOT_H, "boot")
+
+    leg(25, frame == 1)
+    leg(34, frame == 2)
+    return l
+
+
+def build_sit(pose):
+    """Тело сидящей Веры (без ног — их рисует отдельный слой под юбкой)."""
+    hb = hair_back().outlined()
+    base = Layer()
+    base.paste(hb)
+    if pose == "giggle":
+        base.paste(arm_left_raise_to_mouth().outlined(base, merge=()))
+    base.paste(body(pose, sitting=True).outlined())
+    if pose in ("idle", "wave", "think"):
+        base.paste(arm_left_down().outlined())
+    if pose in ("idle", "giggle"):
+        base.paste(arm_right_down().outlined())
+    if pose == "wave":
+        base.paste(arm_right_wave().outlined())
+    if pose == "think":
+        base.paste(arm_right_raise_to_chin().outlined())
+    base.paste(neck().outlined(base, merge={"jacket", "shirt", "ribbon"}))
+    base.paste(face().outlined(base, merge={"skin"}))
+    base.hline(29, 34, 40, SKIN_S, "skin", clip={"skin"})
+    return base
+
+
+def compose_sit(pose="idle", eyes="normal", mouth="smirk", blush=0, legs=0):
+    sit = build_sit(pose)
+    full = legs_sit(legs).outlined()
+    full.paste(sit)
+    full.paste(eyes_layer(eyes))
+    full.paste(mouth_layer(mouth))
+    full.paste(blush_layer(blush))
+    full.paste(build_front(sit))
+    full.paste(hand_layer(pose, full))
+    return full
+
+
 def build_base(pose):
     hb = hair_back().outlined()
     base = Layer()
@@ -680,6 +744,11 @@ def main():
         tmp.paste(build_front(base))
         save(hand_layer(pose, tmp), os.path.join(OUT_DIR, f"hand_{pose}.png"))
     save(build_front(idle_base), os.path.join(OUT_DIR, "front.png"))
+    # сидячая Вера для мобильного чата: legs_sit_N рисуется ПОД sit_<pose>
+    for pose in POSES:
+        save(build_sit(pose), os.path.join(OUT_DIR, f"sit_{pose}.png"))
+    for fr in (0, 1, 2):
+        save(legs_sit(fr).outlined(), os.path.join(OUT_DIR, f"legs_sit_{fr}.png"))
     for k in EYES:
         save(eyes_layer(k), os.path.join(OUT_DIR, f"eyes_{k}.png"))
     for k in MOUTHS:
@@ -707,6 +776,15 @@ def main():
     bg = Image.new("RGBA", big.size, (40, 40, 52, 255))
     bg.alpha_composite(big)
     bg.save(os.path.join(PREVIEW, "big_dark.png"))
+
+    # превью сидячей позы на «панели»
+    seat = Image.new("RGBA", (W * 8 * 4 + 24, H * 8 + 40), (24, 22, 32, 255))
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(seat)
+    d.rectangle([0, 62 * 8, seat.width, seat.height], fill=(48, 44, 62, 255))
+    for i, c in enumerate([("idle", "normal", "smirk", 0, 0), ("giggle", "smug", "smirk", 1, 1), ("wave", "happy", "laugh", 1, 2), ("think", "up", "flat", 0, 0)]):
+        seat.alpha_composite(compose_sit(*c).image(8), (i * (W * 8 + 8), 0))
+    seat.save(os.path.join(PREVIEW, "sit.png"))
 
     # витрина эмоций для README
     docs = os.path.join(ROOT, "docs")

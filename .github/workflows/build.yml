@@ -1,0 +1,70 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Checks
+        run: npm run check
+
+      - name: Build installer (NSIS + portable)
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vera-Windows-${{ steps.ver.outputs.version }}
+          path: |
+            dist/Vera-Setup-*.exe
+            dist/Vera-Portable-*.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Вера v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: 'true'
+          body: |
+            **Вера — чиби ИИ-ассистент для Windows.**
+
+            Скачай `Vera-Setup-${{ steps.ver.outputs.version }}.exe` (установщик) или `Vera-Portable-${{ steps.ver.outputs.version }}.exe` (без установки).
+            Установщик не подписан цифровой подписью, поэтому Windows SmartScreen может предупредить: «Подробнее» → «Выполнить в любом случае».
+
+            Сборка из коммита ${{ github.sha }} (ветка `${{ github.ref_name }}`).
+          files: |
+            dist/Vera-Setup-*.exe
+            dist/Vera-Portable-*.exe
+            dist/latest.yml
+          fail_on_unmatched_files: false

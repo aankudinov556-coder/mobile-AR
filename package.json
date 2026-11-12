@@ -1,0 +1,67 @@
+{
+  "name": "vera-assistant",
+  "productName": "Vera",
+  "version": "1.0.0",
+  "description": "Вера — чиби ИИ-ассистент для рабочего стола: чат, голос (STT/TTS), напоминания, управление ПК, скриншоты, долгая память.",
+  "main": "src/main/main.js",
+  "author": "Vera Assistant",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "check": "node --check src/main/main.js && node scripts/check.js",
+    "sprites": "python3 tools/gen_sprite.py",
+    "dist": "electron-builder --win --x64 --publish never",
+    "dist:dir": "electron-builder --win --x64 --dir --publish never"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "openai": "^7.55.0"
+  },
+  "devDependencies": {
+    "electron": "^45.3.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.vera.assistant",
+    "productName": "Vera",
+    "copyright": "Vera Assistant",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asarUnpack": [],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "Vera-${version}-${arch}-${target}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Вера",
+      "uninstallDisplayName": "Вера — ИИ ассистент",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerLanguages": ["ru_RU"],
+      "language": "1049",
+      "runAfterFinish": true,
+      "artifactName": "Vera-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Vera-Portable-${version}.${ext}"
+    }
+  }
+}

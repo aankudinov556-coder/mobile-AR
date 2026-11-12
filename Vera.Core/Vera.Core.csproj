@@ -12,4 +12,7 @@
     <PackageReference Include="Anthropic" Version="13.8.0" />
     <PackageReference Include="OpenAI" Version="2.15.0" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vera.Core.Tests" />
+  </ItemGroup>
 </Project>

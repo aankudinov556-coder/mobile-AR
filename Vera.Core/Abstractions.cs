@@ -88,7 +88,7 @@ public static class JsonArgs
         if (!o.TryGetPropertyValue(key, out var n) || n is null) return null;
         return n.GetValueKind() switch
         {
-            System.Text.Json.JsonValueKind.Number => n.GetValue<double>(),
+            System.Text.Json.JsonValueKind.Number => double.Parse(n.ToJsonString(), System.Globalization.CultureInfo.InvariantCulture),
             System.Text.Json.JsonValueKind.String when double.TryParse(n.GetValue<string>(), System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var d) => d,
             _ => null,

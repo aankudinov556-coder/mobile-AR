@@ -708,6 +708,16 @@ def main():
     bg.alpha_composite(big)
     bg.save(os.path.join(PREVIEW, "big_dark.png"))
 
+    # витрина эмоций для README
+    docs = os.path.join(ROOT, "docs")
+    os.makedirs(docs, exist_ok=True)
+    show = [("idle", "normal", "smirk", 0), ("giggle", "smug", "smirk", 1), ("wave", "happy", "laugh", 1),
+            ("think", "up", "flat", 0), ("idle", "surprised", "o", 0), ("idle", "side", "wobbly", 2), ("idle", "angry", "pout", 2)]
+    strip = Image.new("RGBA", (len(show) * (W * 3 + 6), H * 3), (0, 0, 0, 0))
+    for i, c in enumerate(show):
+        strip.alpha_composite(compose(*c).image(3), (i * (W * 3 + 6), 0))
+    strip.save(os.path.join(docs, "expressions.png"))
+
     # картинка для пустого чата
     compose("wave", "happy", "cat", 1).image(1).save(os.path.join(OUT_DIR, "preview.png"))
 

@@ -82,8 +82,13 @@ public sealed class VeraView : SKCanvasView
     public VeraView(double unitDp)
     {
         Unit = unitDp;
-        WidthRequest = W * unitDp;
-        HeightRequest = H * unitDp;
+        var density = DeviceDisplay.MainDisplayInfo.Density;
+        if (density <= 0) density = 2.75;
+        PxScale = Math.Max(1, (int)Math.Round(unitDp * density));
+        // запас в пару физических пикселей: округление раскладки не должно уменьшить целый масштаб
+        var slack = 2 / density;
+        WidthRequest = W * unitDp + slack;
+        HeightRequest = H * unitDp + slack;
         HorizontalOptions = LayoutOptions.Start;
         VerticalOptions = LayoutOptions.Start;
         IgnorePixelScaling = false;
@@ -101,6 +106,9 @@ public sealed class VeraView : SKCanvasView
 
     /// <summary>dp на один пиксель спрайта.</summary>
     public double Unit { get; }
+
+    /// <summary>Физических пикселей экрана на один пиксель спрайта (целое — без сглаживания).</summary>
+    public int PxScale { get; }
 
     public PetMode Mode { get; set; } = PetMode.Idle;
 
@@ -273,9 +281,8 @@ public sealed class VeraView : SKCanvasView
 
     private (float X0, float Y0, int K) Geometry(SKImageInfo info)
     {
-        var k = Math.Max(1, Math.Min(info.Width / W, info.Height / H));
-        var x0 = (info.Width - W * k) / 2;
-        return (x0, 0, k);
+        var k = Math.Max(1, Math.Min(PxScale, Math.Min(info.Width / W, info.Height / H)));
+        return (0, 0, k);
     }
 
     private void OnPaint(object? sender, SKPaintSurfaceEventArgs e)
@@ -291,9 +298,8 @@ public sealed class VeraView : SKCanvasView
     private bool HitSprite(SKPoint p)
     {
         var info = CanvasSize;
-        var k = Math.Max(1, Math.Min((int)info.Width / W, (int)info.Height / H));
-        var x0 = ((int)info.Width - W * k) / 2;
-        var px = (int)Math.Floor((p.X - x0) / k);
+        var k = Math.Max(1, Math.Min(PxScale, Math.Min((int)info.Width / W, (int)info.Height / H)));
+        var px = (int)Math.Floor(p.X / k);
         var py = (int)Math.Floor(p.Y / k);
         for (var dy = -1; dy <= 1; dy++)
         for (var dx = -1; dx <= 1; dx++)

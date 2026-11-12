@@ -354,6 +354,7 @@ public sealed class ChatPage : ContentPage
 
     private void Greet()
     {
+        if (_bubbleKind is "reminder" or "voice") return; // не перебивать напоминание
         try
         {
             var (text, noKey) = Core.Greeting();

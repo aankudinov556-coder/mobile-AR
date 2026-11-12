@@ -1,3 +1,6 @@
 <Solution>
+  <Project Path="Vera.Core.Tests/Vera.Core.Tests.csproj" />
   <Project Path="Vera.Core/Vera.Core.csproj" />
+  <Project Path="Vera.Desktop/Vera.Desktop.csproj" />
+  <Project Path="Vera.Mobile/Vera.Mobile.csproj" />
 </Solution>

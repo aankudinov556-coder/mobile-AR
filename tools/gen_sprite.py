@@ -3,13 +3,13 @@
 Генератор пиксель-арт спрайта Веры (оригинальный чиби-персонаж).
 
 Выход (1x, 64x72):
-  src/renderer/assets/vera/base_<pose>.png   — задние волосы, тело, лицо (поза рук)
-  src/renderer/assets/vera/eyes_<kind>.png
-  src/renderer/assets/vera/mouth_<kind>.png
-  src/renderer/assets/vera/blush_<lvl>.png
-  src/renderer/assets/vera/front.png         — чёлка, боковые пряди, заколка
-  src/renderer/assets/vera/hand_<pose>.png   — рука поверх лица (для поз)
-  build/icon.ico, build/icon.png, src/renderer/assets/tray.png, src/renderer/assets/icon.png
+  assets/vera/base_<pose>.png   — задние волосы, тело, лицо (поза рук)
+  assets/vera/eyes_<kind>.png
+  assets/vera/mouth_<kind>.png
+  assets/vera/blush_<lvl>.png
+  assets/vera/front.png         — чёлка, боковые пряди, заколка
+  assets/vera/hand_<pose>.png   — рука поверх лица (для поз)
+  build/icon.ico, build/icon.png, assets/tray.png, assets/icon.png
   tools/preview/*.png                         — превью (не в git)
 
 Запуск: python3 tools/gen_sprite.py

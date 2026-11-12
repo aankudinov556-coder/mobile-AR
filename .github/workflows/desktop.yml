@@ -1,0 +1,111 @@
+name: Desktop (Windows, WPF)
+
+# ПК-версия Веры (C#/WPF): тесты ядра, однофайловая сборка, установщик Inno Setup и портативный zip.
+# Публикует файлы в релиз v<версия из Directory.Build.props>.
+on:
+  push:
+    paths:
+      - 'Vera.Desktop/**'
+      - 'Vera.Core/**'
+      - 'Vera.Core.Tests/**'
+      - 'assets/**'
+      - 'build/**'
+      - 'Directory.Build.props'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: NuGet cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-desktop-${{ hashFiles('Vera.Desktop/*.csproj', 'Vera.Core/*.csproj', 'Vera.Core.Tests/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-desktop-
+
+      - name: Read version
+        id: ver
+        run: |
+          $m = Select-String -Path Directory.Build.props -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
+          if (-not $m) { throw 'Version не найдена в Directory.Build.props' }
+          $v = $m.Matches[0].Groups[1].Value.Trim()
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Версия: $v"
+
+      - name: Tests (Vera.Core.Tests)
+        if: hashFiles('Vera.Core.Tests/*.csproj') != ''
+        run: dotnet test Vera.Core.Tests -c Release --logger "console;verbosity=normal"
+
+      - name: Publish (single file, self-contained)
+        run: >
+          dotnet publish Vera.Desktop/Vera.Desktop.csproj -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o out/publish
+
+      - name: Install Inno Setup
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe не найден: $iscc" }
+          "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build installer
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $pub = (Resolve-Path out/publish).Path
+          $out = (Resolve-Path out).Path
+          & $env:ISCC "/DMyAppVersion=$v" "/DPublishDir=$pub" "/O$out" Vera.Desktop/installer/vera.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC завершился с кодом $LASTEXITCODE" }
+
+      - name: Portable zip
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $files = Get-ChildItem out/publish -File | Where-Object { $_.Extension -ne '.pdb' }
+          Compress-Archive -Path $files.FullName -DestinationPath "out/Vera-Portable-$v.zip" -Force
+          Get-ChildItem out -File | Format-Table Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vera-Windows-${{ steps.ver.outputs.version }}
+          path: |
+            out/Vera-Setup-${{ steps.ver.outputs.version }}.exe
+            out/Vera-Portable-${{ steps.ver.outputs.version }}.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Вера v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            out/Vera-Setup-${{ steps.ver.outputs.version }}.exe
+            out/Vera-Portable-${{ steps.ver.outputs.version }}.zip
+          fail_on_unmatched_files: true
+          overwrite_files: true

@@ -4,8 +4,10 @@ using Android.Media.Audiofx;
 using Android.OS;
 using Android.Speech;
 using Android.Speech.Tts;
-using Java.Util;
+
 using Encoding = Android.Media.Encoding;
+using TextToSpeech = Android.Speech.Tts.TextToSpeech;
+using Locale = Java.Util.Locale;
 using Stream = Android.Media.Stream;
 
 namespace Vera.Mobile.Platform;
@@ -53,7 +55,7 @@ public sealed class MicCapture
                 for (var i = 0; i < n; i++) f[i] = buf[i] / 32768f;
                 try { onFrame(f, Rate); } catch (Exception e) { Android.Util.Log.Warn("Vera", "mic frame: " + e.Message); }
             }
-        }) { IsBackground = true, Name = "vera-mic", Priority = ThreadPriority.AboveNormal };
+        }) { IsBackground = true, Name = "vera-mic", Priority = System.Threading.ThreadPriority.AboveNormal };
         _thread.Start();
     }
 
@@ -202,9 +204,9 @@ public sealed class Mp3Player
         }).ConfigureAwait(false);
 
         using var reg = ct.Register(() => tcs.TrySetCanceled());
-        var started = Environment.TickCount64;
+        var started = System.Environment.TickCount64;
         var wave = vis is not null ? new byte[Math.Max(128, vis.CaptureSize)] : null;
-        var silentSince = Environment.TickCount64;
+        var silentSince = System.Environment.TickCount64;
         var useVis = vis is not null;
         try
         {
@@ -216,7 +218,7 @@ public sealed class Mp3Player
                     lv = 0;
                     try
                     {
-                        if (vis.GetWaveForm(wave) == Visualizer.Success)
+                        if (vis.GetWaveForm(wave) == (int)VisualizerStatus.Success)
                         {
                             double acc = 0;
                             foreach (var b in wave) { var v = ((b & 0xFF) - 128) / 128.0; acc += v * v; }
@@ -224,11 +226,11 @@ public sealed class Mp3Player
                         }
                     }
                     catch { useVis = false; }
-                    if (lv > 0.02f) silentSince = Environment.TickCount64;
+                    if (lv > 0.02f) silentSince = System.Environment.TickCount64;
                     // некоторые прошивки отдают тишину — переходим на приближение
-                    else if (Environment.TickCount64 - silentSince > 900 && Environment.TickCount64 - started > 900) useVis = false;
+                    else if (System.Environment.TickCount64 - silentSince > 900 && System.Environment.TickCount64 - started > 900) useVis = false;
                 }
-                else lv = Approx(Environment.TickCount64 - started);
+                else lv = Approx(System.Environment.TickCount64 - started);
                 level(lv);
                 await Task.WhenAny(tcs.Task, Task.Delay(50)).ConfigureAwait(false);
             }

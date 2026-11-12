@@ -9,7 +9,7 @@ namespace Vera.Desktop.Platform;
 /// <summary>Пункт меню трея (null-Label — разделитель).</summary>
 public sealed record TrayMenuItem(string? Label, Action? Click = null, bool? Checked = null)
 {
-    public static TrayMenuItem Separator => new(null);
+    public static TrayMenuItem Separator => new((string?)null);
 }
 
 /// <summary>Иконка в трее (WinForms NotifyIcon) с тёмным/светлым меню.</summary>

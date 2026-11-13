@@ -10,6 +10,7 @@ on:
       - 'Vera.Core/**'
       - 'Vera.Core.Tests/**'
       - 'Vera.LocalAI/**'
+      - 'Vera.LocalAI.Tests/**'
       - 'assets/**'
       - 'build/**'
       - 'Directory.Build.props'
@@ -59,9 +60,11 @@ jobs:
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Версия: $v"
 
-      - name: Tests (Vera.Core.Tests)
+      - name: Tests (ядро + локальный ИИ)
         if: hashFiles('Vera.Core.Tests/*.csproj') != ''
-        run: dotnet test Vera.Core.Tests -c Release --logger "console;verbosity=normal"
+        run: |
+          dotnet test Vera.Core.Tests -c Release --logger "console;verbosity=normal"
+          dotnet test Vera.LocalAI.Tests -c Release --logger "console;verbosity=normal"
 
       - name: Publish (single file, self-contained)
         run: >

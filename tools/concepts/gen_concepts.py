@@ -219,7 +219,7 @@ def heart_tip(l, cx, cy):
                 l.set(cx - 2 + dx, cy - 2 + dy, LED_MAP[ch], "tail_tip")
 
 
-def tail_layer(sitting):
+def tail_layer(sitting, r=1.35):
     """Хвост-кабель с сегментами и розовым сердечком-штекером."""
     l = Layer()
     if sitting:
@@ -228,7 +228,7 @@ def tail_layer(sitting):
     else:
         pts = [(40, 56), (50, 64), (58, 60), (57, 49)]
         tip = (57, 47)
-    thick_curve(l, pts, 1.35, DRONE_PALETTE["JACKET"], "tail")
+    thick_curve(l, pts, r, DRONE_PALETTE["JACKET"], "tail")
     # сегменты-кольца
     (x0, y0), (x1, y1), (x2, y2), (x3, y3) = pts
     for i in range(1, 9):

@@ -1,0 +1,60 @@
+{
+  "id": "halo",
+  "source": "halo_sheet.png",
+  "poses": {
+    "think_sit": {
+      "file": "think_sit.png",
+      "size": [
+        502,
+        694
+      ],
+      "baseline": 694,
+      "about": "сидит, ладонь у щеки, «?» — думает"
+    },
+    "shrug": {
+      "file": "shrug.png",
+      "size": [
+        375,
+        571
+      ],
+      "baseline": 571,
+      "about": "стоит, разводит руками «~» — спокойно / дразнится"
+    },
+    "laugh": {
+      "file": "laugh.png",
+      "size": [
+        289,
+        546
+      ],
+      "baseline": 546,
+      "about": "глаза >< — смеётся"
+    },
+    "sit": {
+      "file": "sit.png",
+      "size": [
+        328,
+        413
+      ],
+      "baseline": 413,
+      "about": "сидит, обняв колени — ожидание (панель чата)"
+    },
+    "giggle": {
+      "file": "giggle.png",
+      "size": [
+        328,
+        489
+      ],
+      "baseline": 489,
+      "about": "ладошка у рта — хи-хи"
+    },
+    "lie": {
+      "file": "lie.png",
+      "size": [
+        392,
+        293
+      ],
+      "baseline": 293,
+      "about": "лежит, «...» — скучает / спит"
+    }
+  }
+}

@@ -51,12 +51,18 @@ public sealed partial class PetWindow : Window
         public readonly List<ToolView> Tools = new();
         public bool Speak;
         public int LastStep = -1;
+        public readonly Dictionary<int, int> StepStart = new();
     }
 
     private enum FxKind { Plain, Zzz, Alert, Heart }
 
     private readonly AppHost _host;
     private readonly SpriteSheet _sheet = new();
+    private readonly Dictionary<string, System.Windows.Media.Imaging.BitmapSource?> _haloFrames = new();
+    private readonly ScaleTransform _talkScale = new();
+    private readonly Border _glow;
+    private SkinInfo _skin = Skins.All[0];
+    private Posture _posture = Posture.Stand;
 
     private readonly Grid _stage;
     private readonly Grid _spriteArea;
@@ -126,14 +132,18 @@ public sealed partial class PetWindow : Window
         RenderOptions.SetBitmapScalingMode(_sprite, BitmapScalingMode.NearestNeighbor);
         RenderOptions.SetEdgeMode(_sprite, EdgeMode.Aliased);
         // drop-shadow(0 0 1px белый) + drop-shadow(0 2px 3px тень), как в pet.css
-        var glow = new Border
+        _sprite.RenderTransformOrigin = new Point(0.5, 1);
+        _sprite.RenderTransform = _talkScale; // покадровый скин «говорит» лёгким покачиванием
+        _glow = new Border
         {
             Child = _sprite,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
             Effect = new DropShadowEffect { Color = Colors.White, ShadowDepth = 0, BlurRadius = 2, Opacity = 0.55 },
         };
         _veraBox = new Grid
         {
-            Children = { glow },
+            Children = { _glow },
             Effect = new DropShadowEffect { Color = Colors.Black, Direction = 270, ShadowDepth = 2, BlurRadius = 5, Opacity = 0.35 },
             RenderTransformOrigin = new Point(0.5, 1),
             RenderTransform = new TransformGroup { Children = { _tilt, _lift, _breathe, _hop, _shake } },
@@ -398,8 +408,13 @@ public sealed partial class PetWindow : Window
         var sizeChanged = Math.Abs(scale - _scale) > 0.001 || !keepAnchor;
         _scale = scale;
 
+        _skin = Skins.Get(S.Skin);
+        var pixel = _skin.PixelArt;
+        RenderOptions.SetBitmapScalingMode(_sprite, pixel ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+        RenderOptions.SetEdgeMode(_sprite, pixel ? EdgeMode.Aliased : EdgeMode.Unspecified);
         _veraBox.Width = _sprite.Width = 64 * _scale;
         _veraBox.Height = _sprite.Height = 72 * _scale;
+        _frameKey = "";
         _spriteArea.Height = 74 * _scale;
         _shadow.Width = 36 * _scale;
         _shadow.Height = 5 * _scale;
@@ -527,10 +542,46 @@ public sealed partial class PetWindow : Window
         var mode = _mode;
         if (mode is PetMode.Idle or PetMode.Talking)
             mode = level > 0.18f || flap || speaker.Active ? PetMode.Talking : PetMode.Idle;
-        var frame = VeraSprite.Compose(emo, mode, _blink, mouthOpen, _dragging);
+        _posture = Bored(now, speaker.Active) ? Posture.Floor : Posture.Stand;
+        if (_skin.Kind == SkinKind.Frames)
+        {
+            DrawFrameSkin(emo, mode, mouthOpen, force);
+            return;
+        }
+        var frame = VeraSprite.Compose(emo, mode, _blink, mouthOpen, _dragging, _posture);
         if (!force && frame.Key == _frameKey) return;
         _frameKey = frame.Key;
+        _sprite.Width = 64 * _scale;
+        _sprite.Height = 72 * _scale;
+        _talkScale.ScaleY = 1;
         _sprite.Source = _sheet.Compose(frame);
+    }
+
+    /// <summary>Заскучала: давно не трогали и ничего не происходит — садится на пол.</summary>
+    private bool Bored(DateTime now, bool speaking) =>
+        S.Pet.SitWhenBored && !_dragging && !speaking && _turns.Count == 0 &&
+        _mode is PetMode.Idle or PetMode.Sleeping &&
+        now - _lastInteraction > TimeSpan.FromMinutes(Math.Max(1, S.Pet.SitAfterMinutes));
+
+    /// <summary>Покадровый скин (рисунок пользователя): готовая поза по эмоции, плавное масштабирование.</summary>
+    private void DrawFrameSkin(string emo, PetMode mode, bool mouthOpen, bool force)
+    {
+        var pose = Skins.HaloPose(emo, mode, _posture, _dragging);
+        var talking = mode == PetMode.Talking && mouthOpen;
+        var key = _skin.Id + "|" + pose.Name + (talking ? "|t" : "");
+        if (!force && key == _frameKey) return;
+        _frameKey = key;
+        _talkScale.ScaleY = talking ? 1.025 : 1;
+        if (!_haloFrames.TryGetValue(pose.Name, out var img))
+            _haloFrames[pose.Name] = img = SpriteSheet.LoadImage($"/{_skin.Folder}/{pose.Name}.png");
+        if (img is null) return;
+        // высота позы относительно стоящей; стоя — почти во весь рост пиксельной Веры
+        var h = 70 * _scale * pose.Height;
+        var w = h * img.PixelWidth / Math.Max(1, img.PixelHeight);
+        if (w > 64 * _scale) { h *= 64 * _scale / w; w = 64 * _scale; }
+        _sprite.Width = w;
+        _sprite.Height = h;
+        _sprite.Source = img;
     }
 
     private void Fx(string text, FxKind kind, double dx, double dy)
@@ -855,9 +906,22 @@ public sealed partial class PetWindow : Window
                     var trimmed = t.Text.ToString().TrimEnd();
                     t.Text.Clear().Append(trimmed).Append('\n');
                 }
+                if (!t.StepStart.ContainsKey(d.Step)) t.StepStart[d.Step] = t.Text.Length;
                 t.LastStep = d.Step;
                 t.Text.Append(d.Delta);
                 if (!t.Speak) _textFlapUntil = DateTime.Now.AddMilliseconds(260);
+                RenderTurnBubble(t, true);
+                break;
+            }
+            case TextReplaced tr:
+            {
+                // вызов команды JSON-ом выполнен — убираем его из пузыря
+                if (!_turns.TryGetValue(tr.TurnId, out var t)) return;
+                var start = t.StepStart.TryGetValue(tr.Step, out var st) ? Math.Min(st, t.Text.Length) : t.Text.Length;
+                t.Text.Length = start;
+                t.Text.Append(tr.Text);
+                t.StepStart[tr.Step] = start;
+                t.LastStep = tr.Step;
                 RenderTurnBubble(t, true);
                 break;
             }

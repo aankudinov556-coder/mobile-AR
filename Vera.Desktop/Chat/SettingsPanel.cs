@@ -16,14 +16,15 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using Vera.Core;
 using Vera.Core.Providers;
+using Vera.LocalAI;
 using Vera.Desktop.Audio;
 using Vera.Desktop.Platform;
 using Vera.Desktop.UI;
 
 namespace Vera.Desktop.Chat;
 
-/// <summary>Вкладка «Настройки» — те же разделы, что в src/renderer/app.html.</summary>
-public sealed class SettingsPanel : Grid
+/// <summary>Вкладка «Настройки»: разделы с поиском, готовые наборы, модели, голос, Вера, ПК, система.</summary>
+public sealed partial class SettingsPanel : Grid
 {
     private readonly AppHost _host;
     private readonly ChatWindow _window;
@@ -52,37 +53,46 @@ public sealed class SettingsPanel : Grid
 
         // ------------------------------------------------------------ welcome
         var welcomeText = new TextBlock { TextWrapping = TextWrapping.Wrap, LineHeight = 20, Margin = new Thickness(0, 4, 0, 0) };
-        welcomeText.Inlines.Add(new Run("Чтобы Вера заработала, вставь хотя бы один API-ключ ниже — например, "));
-        welcomeText.Inlines.Add(new Run("OpenRouter") { FontWeight = FontWeights.Bold });
-        welcomeText.Inlines.Add(new Run(" (один ключ даёт доступ к сотням моделей). Для голоса и распознавания речи нужен ключ "));
-        welcomeText.Inlines.Add(new Run("OpenAI") { FontWeight = FontWeights.Bold });
-        welcomeText.Inlines.Add(new Run(" (или "));
-        welcomeText.Inlines.Add(new Run("Groq") { FontWeight = FontWeights.Bold });
-        welcomeText.Inlines.Add(new Run(" для распознавания + системный голос Windows бесплатно)."));
-        _welcome = Ui.Card(Ui.Title("Добро пожаловать!"), welcomeText);
+        welcomeText.Inlines.Add(new Run("Выбери, как Вера будет думать. "));
+        welcomeText.Inlines.Add(new Run("Бесплатно и офлайн") { FontWeight = FontWeights.Bold });
+        welcomeText.Inlines.Add(new Run(" — скачай модель в разделе «Локальный ИИ», ключи не нужны. "));
+        welcomeText.Inlines.Add(new Run("Через облако") { FontWeight = FontWeights.Bold });
+        welcomeText.Inlines.Add(new Run(" — вставь ключ ниже: например, OpenRouter (один ключ — сотни моделей). " +
+                                        "Для живого голоса и распознавания — ключ OpenAI или Groq. Или просто нажми готовый набор ниже."));
+        var goLocal = Ui.Button("Скачать модель для ПК", "Btn.Primary", null, () => ShowSection("local"));
+        var goKeys = Ui.Button("У меня есть ключ", "Btn.Ghost", null, () => ShowSection("main"));
+        goLocal.Margin = new Thickness(0, 0, 8, 0);
+        var welcomeButtons = new WrapPanel { Margin = new Thickness(0, 10, 0, 0), Children = { goLocal, goKeys } };
+        _welcome = Ui.Card(Ui.Title("Добро пожаловать! 👋"), welcomeText, welcomeButtons);
         _welcome.SetResourceReference(Border.BorderBrushProperty, "Accent");
         _welcome.SetResourceReference(Border.BackgroundProperty, "AccentSoft");
+        root.Children.Add(NavBar());
         root.Children.Add(_welcome);
 
-        root.Children.Add(ModelCard());
-        root.Children.Add(KeysCard());
-        root.Children.Add(PersonaCard());
-        root.Children.Add(VoiceCard());
-        root.Children.Add(SttCard());
+        Add(root, PresetsCard(), "main");
+        Add(root, ModelCard(), "main");
+        Add(root, KeysCard(), "main");
+        Add(root, SearchCard(), "main");
+        Add(root, LocalCard(), "local");
+        Add(root, VoiceCard(), "voice");
+        Add(root, SttCard(), "voice");
 
         _hotkeyErrors = Ui.Text("", 12, "Err");
         _hotkeyErrorsBox = Ui.Note("", error: true);
         _hotkeyErrorsBox.Child = _hotkeyErrors;
-        root.Children.Add(HotkeysCard());
-        root.Children.Add(PetCard());
-        root.Children.Add(RemindersCard());
-        root.Children.Add(CapabilitiesCard());
-        root.Children.Add(AppsCard());
-        root.Children.Add(SystemCard());
+        Add(root, PersonaCard(), "vera");
+        Add(root, PetCard(), "vera");
+        Add(root, RemindersCard(), "vera");
+        Add(root, HotkeysCard(), "pc");
+        Add(root, CapabilitiesCard(), "pc");
+        Add(root, AppsCard(), "pc");
+        Add(root, UsageCard(), "system");
+        Add(root, SystemCard(), "system");
 
         Children.Add(Ui.Scroll(root));
         RenderKeys();
         Refresh();
+        ApplyFilter();
     }
 
     private VeraCore Core => _host.Core;
@@ -197,11 +207,11 @@ public sealed class SettingsPanel : Grid
     private Border ModelCard()
     {
         // провайдер — сегментированный переключатель
-        var seg = new UniformGrid { Rows = 1, Columns = ProviderRegistry.Known.Count };
+        var seg = new UniformGrid { Columns = 3 };
         foreach (var (id, title, _) in ProviderRegistry.Known)
         {
             var rb = Ui.Radio(title, "provider", "Segment");
-            rb.Margin = new Thickness(1.5, 0, 1.5, 0);
+            rb.Margin = new Thickness(1.5, 1.5, 1.5, 1.5);
             var pid = id;
             rb.Checked += (_, _) =>
             {
@@ -227,7 +237,7 @@ public sealed class SettingsPanel : Grid
         _model.SelectionChanged += (_, _) =>
         {
             if (_loading || _model.SelectedItem is not ComboBoxItem ci) return;
-            _model.Text = ci.Content as string ?? "";
+            _model.Text = ci.Tag as string ?? ci.Content as string ?? "";
             CommitModel();
         };
         _refreshers.Add(() => { if (!_model.IsKeyboardFocusWithin) _model.Text = S.CurrentModel; });
@@ -238,6 +248,19 @@ public sealed class SettingsPanel : Grid
         var modelBox = new StackPanel();
         modelBox.Children.Add(Ui.Row(new UIElement[] { _model, refresh }, 8, 0));
         modelBox.Children.Add(_modelHint);
+
+        // свой сервер (Ollama, LM Studio, llama-server, vLLM…)
+        var customUrl = Text(s => s.CustomBaseUrl, (s, v) => s.CustomBaseUrl = v.Trim(), placeholder: "http://localhost:11434/v1");
+        var customSub = Ui.Sub(
+            Ui.Field("Адрес OpenAI-совместимого сервера", customUrl),
+            Ui.Muted("Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. Ключ (если нужен) — в разделе ключей, строка «Свой сервер»."));
+        ShowIf(customSub, s => s.Provider == "custom");
+        var localSub = Ui.Sub(
+            Ui.Muted("Модель работает прямо на этом ПК. Скачать или выбрать модель — в разделе «Локальный ИИ»."),
+            Ui.LinkButton("Открыть «Локальный ИИ» →", () => ShowSection("local")));
+        ShowIf(localSub, s => s.Provider == "local");
+        modelBox.Children.Add(customSub);
+        modelBox.Children.Add(localSub);
 
         var effort = Combo(new[]
         {
@@ -258,9 +281,16 @@ public sealed class SettingsPanel : Grid
             Ui.Field("Провайдер", segBox),
             Ui.Field("Модель", modelBox),
             Ui.Field("Глубина размышлений", effort),
-            Toggle("Поиск в интернете", s => s.WebSearch, (s, v) => s.WebSearch = v,
-                "(Anthropic — web search, OpenRouter — плагин web; платно у провайдера)"),
+            Toggle("Разбор команд из текста", s => s.ToolCallFallback, (s, v) => s.ToolCallFallback = v,
+                "(если модель пишет команду JSON-ом — выполнить её; для моделей без инструментов)"),
             Ui.Field("Сообщений истории в контексте", history));
+    }
+
+    private static string Price(ModelInfo m)
+    {
+        if (m.InputPerMTok is not { } i || m.OutputPerMTok is not { } o) return "";
+        if (i == 0 && o == 0) return " · бесплатно";
+        return string.Create(CultureInfo.InvariantCulture, $" · ${i:0.##}/${o:0.##}");
     }
 
     private void CommitModel()
@@ -277,12 +307,24 @@ public sealed class SettingsPanel : Grid
         try
         {
             var list = await Task.Run(() => Core.Providers.ListModelsAsync(provider));
-            var rows = provider == "openrouter" ? list.Where(m => m.Tools).ToList() : list.ToList();
+            // модели с инструментами — первыми; без них Вера не сможет ставить напоминания и открывать программы
+            var rows = list.OrderByDescending(m => m.Tools).ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase).ToList();
             _model.Items.Clear();
-            foreach (var m in rows.OrderBy(m => m.Id, StringComparer.OrdinalIgnoreCase))
-                _model.Items.Add(new ComboBoxItem { Content = m.Id, ToolTip = m.Name + (m.Vision ? " · 👁 видит картинки" : "") });
+            foreach (var m in rows)
+            {
+                var marks = (m.Tools ? " 🛠" : "") + (m.Vision ? " 👁" : "") + Price(m);
+                var label = provider == "local" ? m.Name : m.Id;
+                var item = new ComboBoxItem
+                {
+                    Content = label + marks,
+                    Tag = m.Id,
+                    ToolTip = m.Name + (m.Tools ? " · 🛠 умеет команды" : " · без инструментов (только текст)") + (m.Vision ? " · 👁 видит картинки" : ""),
+                };
+                TextSearch.SetText(item, m.Id);
+                _model.Items.Add(item);
+            }
             _model.Text = S.CurrentModel;
-            _window.Toast($"Загружено моделей: {rows.Count}. Выбери из списка или впиши название.");
+            _window.Toast($"Моделей: {rows.Count} (🛠 — умеет команды, 👁 — видит картинки, цена — $ за 1 млн токенов: запрос/ответ).");
             _model.IsDropDownOpen = rows.Count > 0;
         }
         catch (Exception e)
@@ -304,7 +346,8 @@ public sealed class SettingsPanel : Grid
     {
         _keys.Children.Clear();
         var statuses = Core.Secrets.Status();
-        _welcome.Visibility = statuses.Any(s => s.IsSet) ? Visibility.Collapsed : Visibility.Visible;
+        _welcome.Visibility = statuses.Any(s => s.IsSet) || (S.Provider == "local" && _host.Local?.Llm.ResolveModelPath(S.CurrentModel) is not null)
+            ? Visibility.Collapsed : Visibility.Visible;
         foreach (var st in statuses) _keys.Children.Add(KeyRow(st));
     }
 
@@ -439,6 +482,7 @@ public sealed class SettingsPanel : Grid
         {
             ("openai", "OpenAI TTS (живой голос, нужен ключ OpenAI)"),
             ("elevenlabs", "ElevenLabs (нужен ключ ElevenLabs)"),
+            ("piper", "Piper — офлайн-голос на этом ПК (бесплатно)"),
             ("system", "Системный голос Windows (бесплатно)"),
             ("off", "Выключен"),
         }, s => s.Tts.Engine, (s, v) => s.Tts.Engine = v);
@@ -503,6 +547,12 @@ public sealed class SettingsPanel : Grid
         var systemSub = Ui.Sub(Ui.Field("Системный голос", _systemVoice), sysNote);
         ShowIf(systemSub, s => s.Tts.Engine == "system");
 
+        // Piper
+        var piperSub = Ui.Sub(
+            Ui.Muted("Нейросетевой голос без интернета. Скачай программу Piper и один голос — пока не скачано, говорит системный голос."),
+            PiperRows());
+        ShowIf(piperSub, s => s.Tts.Engine == "piper");
+
         var rate = SliderField("Скорость", 0.6, 1.6, 0.05, s => s.Tts.Rate, (s, v) => s.Tts.Rate = Math.Round(v, 2), Num2);
         var volume = SliderField("Громкость", 0, 1, 0.05, s => s.Tts.Volume, (s, v) => s.Tts.Volume = Math.Round(v, 2), Num2);
 
@@ -523,7 +573,7 @@ public sealed class SettingsPanel : Grid
             Ui.Title("🔊 Голос Веры"),
             Ui.Field("Движок синтеза речи", engine),
             Ui.Field("Когда говорить вслух", autoSpeak),
-            openaiSub, elevenSub, systemSub,
+            openaiSub, elevenSub, systemSub, piperSub,
             rate, volume, testRow);
     }
 
@@ -556,7 +606,12 @@ public sealed class SettingsPanel : Grid
 
     private Border SttCard()
     {
-        var provider = Combo(new[] { ("openai", "OpenAI (ключ OpenAI)"), ("groq", "Groq Whisper (быстро и дёшево)") },
+        var provider = Combo(new[]
+            {
+                ("openai", "OpenAI (ключ OpenAI)"),
+                ("groq", "Groq Whisper (быстро и дёшево)"),
+                ("whisper", "Whisper на этом ПК (офлайн, бесплатно)"),
+            },
             s => s.Stt.Provider, (s, v) => s.Stt.Provider = v);
         var lang = Combo(new[] { ("ru", "русский"), ("en", "английский"), ("uk", "украинский"), ("", "авто") },
             s => s.Stt.Language, (s, v) => s.Stt.Language = v);
@@ -564,9 +619,11 @@ public sealed class SettingsPanel : Grid
         var gModel = Combo(Same("whisper-large-v3-turbo", "whisper-large-v3"), s => s.Stt.GroqModel, (s, v) => s.Stt.GroqModel = v);
         var oField = Ui.Field("Модель OpenAI", oModel);
         var gField = Ui.Field("Модель Groq", gModel);
-        ShowIf(oField, s => s.Stt.Provider != "groq");
+        ShowIf(oField, s => s.Stt.Provider == "openai");
         ShowIf(gField, s => s.Stt.Provider == "groq");
-        var models = new Grid { Children = { oField, gField } };
+        var whisperSub = Ui.Sub(Ui.Muted("Модель распознавания работает на процессоре. small — лучший баланс для русского."), WhisperRows());
+        ShowIf(whisperSub, s => s.Stt.Provider == "whisper");
+        var models = new StackPanel { Children = { new Grid { Children = { oField, gField } }, whisperSub } };
 
         _mic = new ComboBox();
         FillMics();
@@ -585,11 +642,27 @@ public sealed class SettingsPanel : Grid
         });
 
         var phrases = Text(s => s.Voice.WakePhrases, (s, v) => s.Voice.WakePhrases = v);
+        var wakeEngine = Combo(new[]
+        {
+            ("vosk", "Vosk — офлайн, бесплатно (рекомендую)"),
+            ("stt", "Через сервис распознавания (каждая фраза — в облако)"),
+        }, s => s.Voice.WakeEngine, (s, v) => s.Voice.WakeEngine = v);
+        var sttNote = Ui.Note("Микрофон слушает постоянно, и каждая услышанная фраза отправляется на распознавание — это тратит баланс STT-сервиса. " +
+                              "С Groq это почти бесплатно. Пока Вера говорит, она себя не слушает.");
+        ShowIf(sttNote, s => s.Voice.WakeEngine != "vosk");
+        var voskRow = DownloadRow(ModelCatalog.Get("vosk-small-ru")!, onInstalled: () => _host.Voice.SyncSettings());
+        ShowIf(voskRow, s => s.Voice.WakeEngine == "vosk");
         var wakeSub = Ui.Sub(
+            Ui.Field("Чем слушать имя", wakeEngine),
+            voskRow,
             Ui.Field("Слова-активаторы (через запятую)", phrases),
-            Ui.Note("Микрофон слушает постоянно, и каждая услышанная фраза отправляется на распознавание — это тратит баланс STT-сервиса. " +
-                    "С Groq это почти бесплатно. Пока Вера говорит, она себя не слушает."));
+            sttNote);
         ShowIf(wakeSub, s => s.Voice.WakeWord);
+        var vad = Combo(new[]
+        {
+            ("silero", "Нейросеть Silero — не путает речь с шумом (рекомендую)"),
+            ("energy", "По громкости (как раньше)"),
+        }, s => s.Voice.Vad, (s, v) => s.Voice.Vad = v);
 
         var wakeLabel = new TextBlock { TextWrapping = TextWrapping.Wrap };
         wakeLabel.Inlines.Add(new Run("Голосовая активация по слову "));
@@ -606,6 +679,7 @@ public sealed class SettingsPanel : Grid
             SliderField("Чувствительность микрофона", 0, 1, 0.05, s => s.Voice.Sensitivity, (s, v) => s.Voice.Sensitivity = Math.Round(v, 2), Num2),
             SliderField("Пауза, после которой фраза считается законченной", 500, 2500, 100, s => s.Voice.SilenceMs,
                 (s, v) => s.Voice.SilenceMs = (int)Math.Round(v), v => $"{v:0} мс"),
+            Ui.Field("Как понять, что ты говоришь", vad),
             Toggle("Звук начала/конца записи", s => s.Voice.Chime, (s, v) => s.Voice.Chime = v),
             wake,
             wakeSub);
@@ -710,7 +784,10 @@ public sealed class SettingsPanel : Grid
             Ui.Title("🧸 Вера на рабочем столе"),
             Toggle("Показывать Веру", s => s.Pet.Visible, (s, v) => s.Pet.Visible = v),
             Toggle("Поверх всех окон", s => s.Pet.AlwaysOnTop, (s, v) => s.Pet.AlwaysOnTop = v),
+            Ui.Field("Скин", Combo(SkinOptions(), s => s.Skin, (s, v) => s.Skin = v)),
             Toggle("Иногда болтает сама (без API)", s => s.Pet.IdleChatter, (s, v) => s.Pet.IdleChatter = v),
+            Toggle("Садится на пол, когда скучно", s => s.Pet.SitWhenBored, (s, v) => s.Pet.SitWhenBored = v),
+            SliderField("Через сколько садится", 1, 30, 1, s => s.Pet.SitAfterMinutes, (s, v) => s.Pet.SitAfterMinutes = (int)Math.Round(v), v => $"{v:0} мин"),
             SliderField("Размер", 2, 6, 1, s => s.Pet.Scale, (s, v) => s.Pet.Scale = (int)Math.Round(v), v => $"{v:0}×"),
             SliderField("Сколько показывать реплику", 3, 30, 1, s => s.Pet.BubbleSeconds, (s, v) => s.Pet.BubbleSeconds = (int)Math.Round(v), v => $"{v:0} с"),
             hint);
@@ -820,6 +897,7 @@ public sealed class SettingsPanel : Grid
             Toggle("Запускать вместе с Windows", s => s.Autostart, (s, val) => s.Autostart = val),
             Ui.Field("Тема", theme),
             buttons,
+            TransferButtons(),
             about);
     }
 }

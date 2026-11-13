@@ -5,6 +5,8 @@ using System.Windows.Threading;
 using Vera.Core;
 using Vera.Core.Agent;
 using Vera.Core.Speech;
+using Vera.LocalAI;
+using Vera.LocalAI.Voice;
 
 namespace Vera.Desktop.Audio;
 
@@ -20,6 +22,10 @@ public sealed partial class VoiceController : IDisposable
     private readonly object _recLock = new();
     private readonly Microphone _mic = new();
     private readonly DispatcherTimer _resumeTimer;
+    private readonly LocalAiService? _local;
+    private VoskWakeWord? _vosk;
+    private volatile bool _voskListening;
+    private bool _voskProblemShown;
 
     private SentenceChunker? _chunker;
     private string? _chunkTurn;
@@ -27,10 +33,11 @@ public sealed partial class VoiceController : IDisposable
     private bool _wakeBusy;
     private bool _ttsErrorShown;
 
-    public VoiceController(VeraCore core, Dispatcher ui)
+    public VoiceController(VeraCore core, Dispatcher ui, LocalAiService? local = null)
     {
         _core = core;
         _ui = ui;
+        _local = local;
         Speaker = new Speaker(core);
         _rec = new VoiceRecorder(() => _core.Settings.Current.Voice.Sensitivity, () => _core.Settings.Current.Voice.SilenceMs);
         _rec.StateChanged += (st, reason) => _ui.BeginInvoke(() => OnState(st, reason));
@@ -38,7 +45,18 @@ public sealed partial class VoiceController : IDisposable
         _rec.Segment += (wav, mode, ms) => _ui.BeginInvoke(() => { var task = OnSegmentAsync(wav, mode); });
         _mic.Frame += f =>
         {
-            lock (_recLock) _rec.Feed(f, Microphone.SampleRate);
+            bool paused;
+            lock (_recLock)
+            {
+                _rec.Feed(f, Microphone.SampleRate);
+                paused = _rec.Paused || _rec.Mode == ListenMode.Command;
+            }
+            // офлайн-слушатель имени: пока Вера говорит или уже записывает команду — не слушаем
+            var vosk = _vosk;
+            if (vosk is not null && _voskListening && !paused)
+            {
+                try { vosk.Feed(f, Microphone.SampleRate); } catch (Exception) { /* кадр пропущен */ }
+            }
         };
         _mic.Failed += msg => _ui.BeginInvoke(() =>
         {
@@ -99,8 +117,11 @@ public sealed partial class VoiceController : IDisposable
 
     private void StopMicIfIdle()
     {
-        if (_rec.Mode == ListenMode.Off && _mic.Running) _mic.Stop();
+        if (_rec.Mode == ListenMode.Off && !_voskListening && _mic.Running) _mic.Stop();
     }
+
+    /// <summary>Сейчас имя слушает Vosk (офлайн), а не облачное распознавание фраз.</summary>
+    public bool WakeIsOffline => _voskListening;
 
     public void StartListening()
     {
@@ -132,6 +153,34 @@ public sealed partial class VoiceController : IDisposable
     public void SyncSettings()
     {
         var want = S.Voice.WakeWord;
+        // нейросетевой детектор речи вместо порога громкости
+        lock (_recLock) _rec.SpeechProbability = S.Voice.Vad == "silero" ? _local?.VadHook() : null;
+        var offline = want && S.Voice.WakeEngine == "vosk" && EnsureVosk();
+        if (!offline && _vosk is not null)
+        {
+            _voskListening = false;
+            _vosk.Dispose();
+            _vosk = null;
+        }
+        if (offline)
+        {
+            // имя слушает Vosk — фоновые фразы в облако не отправляются
+            _vosk!.SetPhrases(S.Voice.WakePhrases);
+            try
+            {
+                EnsureMic();
+                _voskListening = true;
+                if (_rec.WakeEnabled) lock (_recLock) _rec.StopWake();
+                StateChanged?.Invoke(_rec.Mode == ListenMode.Off ? RecorderState.Wake : State, null);
+            }
+            catch (Exception e)
+            {
+                _voskListening = false;
+                Problem?.Invoke("микрофон", "Голосовая активация не запустилась: " + e.Message);
+            }
+            return;
+        }
+        _voskListening = false;
         try
         {
             if (_mic.Running && !string.Equals(_mic.Device, S.Voice.MicDeviceId ?? "", StringComparison.Ordinal))
@@ -156,8 +205,43 @@ public sealed partial class VoiceController : IDisposable
         }
     }
 
+    private bool EnsureVosk()
+    {
+        if (_vosk is not null) return true;
+        if (_local is null) return false;
+        try
+        {
+            _vosk = _local.CreateWakeWord();
+        }
+        catch (Exception e)
+        {
+            Log.Error("vosk", e);
+            _vosk = null;
+        }
+        if (_vosk is null)
+        {
+            if (!_voskProblemShown)
+            {
+                _voskProblemShown = true;
+                Problem?.Invoke("голос", "Модель Vosk не скачана — слушаю имя через обычное распознавание. Скачать: Настройки → Голос.");
+            }
+            return false;
+        }
+        _vosk.Detected += _ => _ui.BeginInvoke(OnOfflineWake);
+        return true;
+    }
+
+    private void OnOfflineWake()
+    {
+        if (!_voskListening || Speaker.Active || (TurnActive?.Invoke() ?? false) || _rec.Mode == ListenMode.Command) return;
+        Interaction?.Invoke();
+        StartListening(); // команда после имени записывается сразу
+    }
+
     private void OnState(RecorderState st, string? reason)
     {
+        // с офлайн-слушателем «выключено» на самом деле означает «жду имя»
+        if (st == RecorderState.Off && _voskListening) st = RecorderState.Wake;
         State = st;
         if (S.Voice.Chime)
         {
@@ -170,7 +254,7 @@ public sealed partial class VoiceController : IDisposable
 
     private void BackToIdle()
     {
-        State = _rec.WakeEnabled ? RecorderState.Wake : RecorderState.Off;
+        State = _rec.WakeEnabled || _voskListening ? RecorderState.Wake : RecorderState.Off;
         StopMicIfIdle();
         StateChanged?.Invoke(State, null);
     }
@@ -292,6 +376,8 @@ public sealed partial class VoiceController : IDisposable
     public void Dispose()
     {
         Speaker.Stop();
+        _voskListening = false;
         _mic.Dispose();
+        _vosk?.Dispose();
     }
 }

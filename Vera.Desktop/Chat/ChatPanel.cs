@@ -13,6 +13,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using Vera.Core;
 using Vera.Core.Agent;
+using Vera.Core.Documents;
 using Vera.Core.Providers;
 using Vera.Core.Speech;
 using Vera.Desktop.Pet;
@@ -37,6 +38,8 @@ public sealed class ChatPanel : DockPanel
         public readonly StringBuilder Text = new();
         public readonly List<Chip> Chips = new();
         public int LastStep = -1;
+        /// <summary>Где в тексте начинается каждый шаг модели (для TextReplaced).</summary>
+        public readonly Dictionary<int, int> StepStart = new();
         public bool Dirty;
     }
 
@@ -49,6 +52,9 @@ public sealed class ChatPanel : DockPanel
     private readonly Button _send, _mic;
     private readonly WrapPanel _attachBox;
     private readonly List<ImageData> _attachments = new();
+    private readonly List<DocumentText> _docs = new();
+    private readonly TextBlock _status;
+    private List<string>? _pendingDocs;
     private readonly Dictionary<string, VeraMessageView> _live = new();
     private string? _pendingPreview;
     private bool _stick = true;
@@ -73,6 +79,8 @@ public sealed class ChatPanel : DockPanel
 
         // ------------------------------------------------------------ composer
         var shot = Ui.IconButton("camera", "Приложить скриншот экрана", AttachScreenshot);
+        var clip = new Button { Style = Ui.Style("Btn.Icon"), Width = 36, Height = 36, Content = new TextBlock { Text = "📎", FontSize = 15 }, ToolTip = "Приложить файл: PDF, DOCX, TXT, код или картинку (можно перетащить в окно)" };
+        clip.Click += (_, _) => PickFiles();
         _input = new TextBox
         {
             AcceptsReturn = true,
@@ -89,8 +97,8 @@ public sealed class ChatPanel : DockPanel
         _mic = Ui.IconButton("mic", "Сказать голосом", () => _host.Voice.StartListening());
         _send = new Button { Style = Ui.Style("Btn.Send"), Content = Icons.Make("send"), ToolTip = "Отправить" };
         _send.Click += (_, _) => Send();
-        foreach (var b in new FrameworkElement[] { shot, _mic, _send }) b.VerticalAlignment = VerticalAlignment.Bottom;
-        var composerRow = Ui.Row(new UIElement[] { shot, _input, _mic, _send }, 6, 1);
+        foreach (var b in new FrameworkElement[] { clip, shot, _mic, _send }) b.VerticalAlignment = VerticalAlignment.Bottom;
+        var composerRow = Ui.Row(new UIElement[] { clip, shot, _input, _mic, _send }, 6, 2);
         var composer = new Border { Padding = new Thickness(10, 10, 10, 12), BorderThickness = new Thickness(0, 1, 0, 0), Child = composerRow };
         composer.SetResourceReference(Border.BorderBrushProperty, "Line");
         composer.SetResourceReference(Border.BackgroundProperty, "Bg");
@@ -100,6 +108,28 @@ public sealed class ChatPanel : DockPanel
         _attachBox = new WrapPanel { Margin = new Thickness(12, 8, 12, 0), Visibility = Visibility.Collapsed };
         SetDock(_attachBox, Dock.Bottom);
         Children.Add(_attachBox);
+
+        // строка состояния: «Загружаю модель… 40%», «Отвечает облако…»
+        _status = Ui.Muted("", 11.5);
+        _status.Margin = new Thickness(14, 6, 14, 0);
+        _status.Visibility = Visibility.Collapsed;
+        SetDock(_status, Dock.Bottom);
+        Children.Add(_status);
+
+        // перетаскивание файлов в окно чата (Preview — чтобы поле ввода не забрало файл себе)
+        AllowDrop = true;
+        PreviewDragOver += (_, e) =>
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return; // текст — пусть обрабатывает поле ввода
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+        };
+        PreviewDrop += (_, e) =>
+        {
+            if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return;
+            e.Handled = true;
+            AddFiles(files);
+        };
 
         // ------------------------------------------------------------ messages
         _messages = new StackPanel { Margin = new Thickness(12, 14, 12, 8) };
@@ -206,7 +236,7 @@ public sealed class ChatPanel : DockPanel
         return new ContextMenu { Items = { mi } };
     }
 
-    private void AddUser(string text, bool hasImage, string? imageB64, DateTimeOffset time)
+    private void AddUser(string text, bool hasImage, string? imageB64, DateTimeOffset time, IReadOnlyList<string>? docs = null)
     {
         var body = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(44, 0, 0, 12) };
         if (imageB64 is not null && FromBase64(imageB64, 440) is { } img)
@@ -221,6 +251,8 @@ public sealed class ChatPanel : DockPanel
         inner.Children.Add(tb);
         if (hasImage && imageB64 is null)
             inner.Children.Add(new TextBlock { Text = "📎 изображение", FontSize = 11, Foreground = Brushes.White, Opacity = 0.85 });
+        foreach (var d in docs ?? Array.Empty<string>())
+            inner.Children.Add(new TextBlock { Text = "📄 " + d, FontSize = 11, Foreground = Brushes.White, Opacity = 0.9, TextTrimming = TextTrimming.CharacterEllipsis });
         var bubble = new Border
         {
             CornerRadius = new CornerRadius(14, 14, 4, 14),
@@ -362,7 +394,7 @@ public sealed class ChatPanel : DockPanel
         _live.Clear();
         foreach (var m in _host.Core.Agent.GetVisibleHistory())
         {
-            if (m.Role == "user") AddUser(m.Text, m.HasImage, null, m.Time);
+            if (m.Role == "user") AddUser(m.Text, m.HasImage, null, m.Time, m.Documents);
             else
             {
                 var v = AddVera(m.Time);
@@ -397,8 +429,9 @@ public sealed class ChatPanel : DockPanel
             {
                 Busy = true;
                 SetSendMode();
-                if (!ts.Hidden) AddUser(ts.UserText, ts.HasImage, _pendingPreview, DateTimeOffset.Now);
+                if (!ts.Hidden) AddUser(ts.UserText, ts.HasImage, _pendingPreview, DateTimeOffset.Now, _pendingDocs);
                 _pendingPreview = null;
+                _pendingDocs = null;
                 var v = AddVera(DateTimeOffset.Now);
                 RenderVera(v, true);
                 _live[ts.TurnId] = v;
@@ -413,8 +446,22 @@ public sealed class ChatPanel : DockPanel
                     var trimmed = v.Text.ToString().TrimEnd();
                     v.Text.Clear().Append(trimmed).Append("\n\n");
                 }
+                if (!v.StepStart.ContainsKey(d.Step)) v.StepStart[d.Step] = v.Text.Length;
                 v.LastStep = d.Step;
                 v.Text.Append(d.Delta);
+                v.Dirty = true;
+                QueueRender();
+                break;
+            }
+            case TextReplaced tr:
+            {
+                // модель написала команду JSON-ом — её выполнили, текст шага заменён без JSON
+                if (!_live.TryGetValue(tr.TurnId, out var v)) return;
+                var start = v.StepStart.TryGetValue(tr.Step, out var st) ? Math.Min(st, v.Text.Length) : v.Text.Length;
+                v.Text.Length = start;
+                v.Text.Append(tr.Text);
+                v.StepStart[tr.Step] = start;
+                v.LastStep = tr.Step;
                 v.Dirty = true;
                 QueueRender();
                 break;
@@ -533,7 +580,7 @@ public sealed class ChatPanel : DockPanel
                 Margin = new Thickness(0, -6, -6, 0),
                 ToolTip = "Убрать",
             };
-            rm.SetResourceReference(BackgroundProperty, "Err");
+            rm.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "Err");
             Ui.SetRadius(rm, new CornerRadius(10));
             rm.Click += (_, _) =>
             {
@@ -543,7 +590,89 @@ public sealed class ChatPanel : DockPanel
             var g = new Grid { Margin = new Thickness(0, 6, 10, 0), Children = { frame, rm } };
             _attachBox.Children.Add(g);
         }
-        _attachBox.Visibility = _attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        for (var i = 0; i < _docs.Count; i++)
+        {
+            var idx = i;
+            var d = _docs[i];
+            var label = "📄 " + d.Name + (d.Pages > 0 ? $" · {d.Pages} стр." : "") + $" · {d.Text.Length / 1000.0:0.#} тыс. симв.";
+            var text = new TextBlock { Text = label, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis };
+            text.SetResourceReference(TextBlock.ForegroundProperty, "Fg");
+            var rm = new Button { Style = Ui.Style("Btn.Base"), Width = 18, Height = 18, Padding = new Thickness(0), Content = Icons.Make("x", 11), Margin = new Thickness(6, 0, 0, 0), ToolTip = "Убрать" };
+            rm.Click += (_, _) =>
+            {
+                if (idx < _docs.Count) _docs.RemoveAt(idx);
+                RenderAttachments();
+            };
+            var chip = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 5, 6, 5), Margin = new Thickness(0, 6, 8, 0), Child = Ui.Row(new UIElement[] { text, rm }, 0, 0), ToolTip = d.Name };
+            chip.SetResourceReference(Border.BackgroundProperty, "AccentSoft");
+            _attachBox.Children.Add(chip);
+        }
+        _attachBox.Visibility = _attachments.Count + _docs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ================================================================== files
+
+    private void PickFiles()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "Что показать Вере?",
+            Filter = "Документы и картинки|*.pdf;*.docx;*.txt;*.md;*.csv;*.json;*.xml;*.html;*.htm;*.rtf;*.log;*.py;*.cs;*.js;*.ts;*.java;*.cpp;*.c;*.h;*.sql;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|Все файлы|*.*",
+        };
+        if (dlg.ShowDialog(_window) == true) AddFiles(dlg.FileNames);
+    }
+
+    /// <summary>Прочитать файлы (картинки — во вложения, документы — текстом). Чтение — в фоне.</summary>
+    public async void AddFiles(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            var name = System.IO.Path.GetFileName(path);
+            try
+            {
+                if (new FileInfo(path).Length > DocumentReader.MaxBytes) throw new ArgumentException($"«{name}» больше 50 МБ.");
+                if (DocumentReader.IsImage(name))
+                {
+                    var bytes = await File.ReadAllBytesAsync(path);
+                    var shot = await System.Threading.Tasks.Task.Run(() =>
+                    {
+                        using var ms = new MemoryStream(bytes);
+                        using var img = System.Drawing.Image.FromStream(ms);
+                        return ScreenCapture.Encode(img);
+                    });
+                    _attachments.Add(new ImageData(ScreenShot.Mime, shot.Base64));
+                }
+                else if (DocumentReader.IsSupported(name))
+                {
+                    _status.Text = "Читаю " + name + "…";
+                    _status.Visibility = Visibility.Visible;
+                    var bytes = await File.ReadAllBytesAsync(path);
+                    var doc = await System.Threading.Tasks.Task.Run(() => DocumentReader.Read(bytes, name));
+                    if (string.IsNullOrWhiteSpace(doc.Text))
+                        throw new ArgumentException($"В «{name}» не нашлось текста (скан без распознавания?). Пришли его картинкой.");
+                    _docs.Add(doc);
+                }
+                else throw new ArgumentException($"«{name}»: такой формат пока не читаю. Подойдут PDF, DOCX, TXT/MD/CSV, код и картинки.");
+            }
+            catch (Exception e)
+            {
+                _window.Toast(e is ArgumentException ? e.Message : $"Не удалось прочитать «{name}»: {e.Message}", true);
+            }
+        }
+        SetStatus(_statusText);
+        RenderAttachments();
+        FocusInput();
+    }
+
+    private string? _statusText;
+
+    /// <summary>Строка состояния под сообщениями (null — скрыть).</summary>
+    public void SetStatus(string? text)
+    {
+        _statusText = text;
+        _status.Text = text ?? "";
+        _status.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private async void AttachScreenshot()
@@ -573,9 +702,9 @@ public sealed class ChatPanel : DockPanel
             return;
         }
         var text = _input.Text.Trim();
-        if (text.Length == 0 && _attachments.Count == 0) return;
+        if (text.Length == 0 && _attachments.Count == 0 && _docs.Count == 0) return;
         var provider = core.Settings.Current.Provider;
-        if (!core.Secrets.Has(provider))
+        if (!core.ProviderReady)
         {
             var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == provider).Title ?? provider;
             _window.Toast($"Сначала добавь ключ {title} в настройках", true);
@@ -583,11 +712,14 @@ public sealed class ChatPanel : DockPanel
             return;
         }
         var images = _attachments.ToList();
+        var docs = _docs.ToList();
         _pendingPreview = images.FirstOrDefault()?.Base64;
+        _pendingDocs = docs.Count > 0 ? docs.Select(d => d.Name).ToList() : null;
         _input.Clear();
         _attachments.Clear();
+        _docs.Clear();
         RenderAttachments();
-        _host.Send(text, images.Count > 0 ? images : null, "chat");
+        _host.Send(text, images.Count > 0 ? images : null, "chat", docs.Count > 0 ? docs : null);
     }
 
     private void NewChat()

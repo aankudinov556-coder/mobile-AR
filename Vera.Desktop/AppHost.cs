@@ -11,6 +11,8 @@ using Microsoft.Toolkit.Uwp.Notifications;
 using Microsoft.Win32;
 using Vera.Core;
 using Vera.Core.Agent;
+using Vera.Core.Providers;
+using Vera.LocalAI;
 using Vera.Desktop.Audio;
 using Vera.Desktop.Chat;
 using Vera.Desktop.Pet;
@@ -52,11 +54,12 @@ public static class Log
 /// </summary>
 public sealed class AppHost : IToolHost
 {
-    private sealed record Snapshot(string Hotkeys, int Scale, bool Topmost, bool PetVisible, bool Autostart, string Theme, bool Wake, string Mic)
+    private sealed record Snapshot(string Hotkeys, int Scale, bool Topmost, bool PetVisible, bool Autostart, string Theme, string Voice, string Mic, string Skin)
     {
         public static Snapshot Of(VeraSettings s) => new(
             $"{s.Hotkeys.ToggleChat}|{s.Hotkeys.Talk}|{s.Hotkeys.Screenshot}",
-            s.Pet.Scale, s.Pet.AlwaysOnTop, s.Pet.Visible, s.Autostart, s.Theme ?? "auto", s.Voice.WakeWord, s.Voice.MicDeviceId ?? "");
+            s.Pet.Scale, s.Pet.AlwaysOnTop, s.Pet.Visible, s.Autostart, s.Theme ?? "auto",
+            $"{s.Voice.WakeWord}|{s.Voice.WakeEngine}|{s.Voice.Vad}|{s.Voice.WakePhrases}", s.Voice.MicDeviceId ?? "", s.Skin ?? "vera");
     }
 
     private readonly Dispatcher _ui;
@@ -76,13 +79,36 @@ public sealed class AppHost : IToolHost
         Core = new VeraCore(Storage, new DpapiSecretStore(Storage), new WindowsTools(this), platform: "desktop");
         _prev = Snapshot.Of(Core.Settings.Current);
         ThemeManager.Apply(Core.Settings.Current.Theme);
-        Voice = new VoiceController(Core, ui);
+        Local = CreateLocalAi(Core);
+        Voice = new VoiceController(Core, ui, Local);
         Pet = new PetWindow(this);
         Chat = new ChatWindow(this);
     }
 
     public FileStorage Storage { get; }
     public VeraCore Core { get; }
+    /// <summary>Офлайн-ИИ: встроенная модель, Whisper, Piper, Silero, Vosk (null — не удалось инициализировать).</summary>
+    public LocalAiService? Local { get; }
+
+    /// <summary>Папка моделей: %LOCALAPPDATA%\VeraAssistant\models (не в роуминге — файлы большие).</summary>
+    public static string ModelsDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VeraAssistant", "models");
+
+    private static LocalAiService? CreateLocalAi(VeraCore core)
+    {
+        try
+        {
+            var silero = Path.Combine(AppContext.BaseDirectory, "assets", "models", "silero_vad.onnx");
+            var local = new LocalAiService(core, ModelsDirectory, silero);
+            local.Attach();
+            return local;
+        }
+        catch (Exception e)
+        {
+            Log.Error("local ai", e);
+            return null;
+        }
+    }
     public VoiceController Voice { get; }
     public PetWindow Pet { get; }
     public ChatWindow Chat { get; }
@@ -115,6 +141,7 @@ public sealed class AppHost : IToolHost
         Core.Memory.Changed += () => OnUi(() => Chat.MemoryPanel.Refresh());
         Core.Settings.Changed += _ => OnUi(OnSettingsChanged);
         Core.Secrets.Changed += () => OnUi(Chat.OnSecretsChanged);
+        if (Local is not null) Local.Llm.Status += msg => OnUi(() => Chat.ChatPanel.SetStatus(msg));
 
         Pet.Prepare();
         if (S.Pet.Visible) Pet.Show();
@@ -183,7 +210,8 @@ public sealed class AppHost : IToolHost
         }
         if (now.Autostart != prev.Autostart) Autostart.Apply(now.Autostart);
         if (now.Theme != prev.Theme) ThemeManager.Apply(now.Theme);
-        if (now.Wake != prev.Wake || now.Mic != prev.Mic) Voice.SyncSettings();
+        if (now.Voice != prev.Voice || now.Mic != prev.Mic) Voice.SyncSettings();
+        if (now.Skin != prev.Skin) Pet.ApplySettings();
         Chat.OnSettingsChanged();
     }
 
@@ -274,10 +302,9 @@ public sealed class AppHost : IToolHost
     // ================================================================== agent
 
     /// <summary>Отправить сообщение агенту (из чата, голосом или со скриншотом).</summary>
-    public void Send(string text, IReadOnlyList<ImageData>? images, string source)
+    public void Send(string text, IReadOnlyList<ImageData>? images, string source, IReadOnlyList<DocumentText>? documents = null)
     {
-        var s = S;
-        if (!Core.Secrets.Has(s.Provider))
+        if (!Core.ProviderReady)
         {
             Pet.Say(Core.Line("noKey"), "angry", 8000, opensChat: true);
             return;
@@ -291,9 +318,9 @@ public sealed class AppHost : IToolHost
         {
             try
             {
-                await Core.Agent.SendAsync(text, images, source);
+                await Core.Agent.SendAsync(text, images, source, documents: documents);
             }
-            catch (InvalidOperationException e) when (e.Message.StartsWith("Вера ещё", StringComparison.Ordinal))
+            catch (AgentBusyException e)
             {
                 _ = _ui.BeginInvoke(() => Pet.Say(e.Message, "think", 4000));
             }
@@ -446,6 +473,7 @@ public sealed class AppHost : IToolHost
             SystemEvents.UserPreferenceChanged -= OnUserPreference;
             Core.Reminders.Stop();
             Voice.Dispose();
+            Local?.Dispose();
             _hotkeys?.Dispose();
             _tray?.Dispose();
             Core.Dispose();

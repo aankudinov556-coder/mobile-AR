@@ -281,4 +281,104 @@ public sealed class SettingsService
     }
 
     public void Flush() => _file.SaveNow();
+
+    /// <summary>Настройки в JSON для переноса на другой ПК (ключей API здесь нет — они в защищённом хранилище).</summary>
+    public string Export()
+    {
+        lock (_file) return JsonSerializer.Serialize(_file.Data, VeraJson.Options);
+    }
+
+    /// <summary>Загрузить настройки из JSON. Позиция Веры на экране и путь к локальной модели остаются свои.</summary>
+    public void Import(string json)
+    {
+        VeraSettings next;
+        try
+        {
+            next = JsonSerializer.Deserialize<VeraSettings>(json, VeraJson.Options) ?? throw new FormatException();
+        }
+        catch (Exception e) when (e is JsonException or FormatException or NotSupportedException)
+        {
+            throw new FormatException("Это не файл настроек Веры.", e);
+        }
+        Replace(next, keepLocal: true);
+    }
+
+    /// <summary>Сбросить всё к начальным значениям (ключи, напоминания и память не трогаются).</summary>
+    public void Reset() => Replace(new VeraSettings { FirstRun = false }, keepLocal: true);
+
+    private void Replace(VeraSettings next, bool keepLocal)
+    {
+        lock (_file)
+        {
+            var cur = _file.Data;
+            if (keepLocal)
+            {
+                next.Pet.X = cur.Pet.X;
+                next.Pet.Y = cur.Pet.Y;
+                next.Local.ModelPath = cur.Local.ModelPath;
+                if (cur.Models.TryGetValue("local", out var lm)) next.Models["local"] = lm;
+                next.AppShortcuts = next.AppShortcuts.Where(a => File.Exists(a.Path) || Directory.Exists(a.Path)).ToList();
+                next.FirstRun = false;
+            }
+            foreach (var p in new[] { "openrouter", "anthropic", "openai", "custom", "local" })
+                if (!next.Models.ContainsKey(p)) next.Models[p] = VeraSettings.DefaultModel(p);
+            _file.Data = next;
+        }
+        _file.Save();
+        Changed?.Invoke(_file.Data);
+    }
+}
+
+/// <summary>Готовые наборы настроек: одной кнопкой переключить провайдера, голос и распознавание.</summary>
+public static class SettingsPresets
+{
+    public sealed record Preset(string Id, string Title, string About, Action<VeraSettings> Apply);
+
+    public static readonly IReadOnlyList<Preset> All = new[]
+    {
+        new Preset("offline", "🌙 Бесплатно и офлайн",
+            "Всё на этом ПК: встроенная модель, Whisper, голос Piper, имя слушает Vosk. Без ключей и интернета (кроме поиска). Нужно скачать модели.",
+            s =>
+            {
+                s.Provider = "local";
+                s.Stt.Provider = "whisper";
+                s.Tts.Engine = "piper";
+                s.Voice.WakeEngine = "vosk";
+                s.Voice.Vad = "silero";
+                s.Search.Engine = "auto";
+                s.WebSearch = false;
+            }),
+        new Preset("quality", "✨ Максимум качества",
+            "Claude от Anthropic, живой голос и распознавание OpenAI. Нужны ключи Anthropic и OpenAI.",
+            s =>
+            {
+                s.Provider = "anthropic";
+                s.Models["anthropic"] = VeraSettings.DefaultModel("anthropic");
+                s.Effort = "medium";
+                s.Stt.Provider = "openai";
+                s.Tts.Engine = "openai";
+                s.Voice.WakeEngine = "vosk";
+                s.Voice.Vad = "silero";
+            }),
+        new Preset("cheap", "🪙 Экономно",
+            "Недорогая модель через OpenRouter, распознавание Groq (почти бесплатно), системный голос Windows.",
+            s =>
+            {
+                s.Provider = "openrouter";
+                s.Models["openrouter"] = VeraSettings.DefaultModel("openrouter");
+                s.Effort = "low";
+                s.Stt.Provider = "groq";
+                s.Tts.Engine = "system";
+                s.Voice.WakeEngine = "vosk";
+                s.Voice.Vad = "silero";
+            }),
+    };
+
+    /// <summary>Каких ключей не хватает для набора (имена секретов).</summary>
+    public static IReadOnlyList<string> MissingKeys(string presetId, Func<string, bool> has) => presetId switch
+    {
+        "quality" => new[] { "anthropic", "openai" }.Where(k => !has(k)).ToList(),
+        "cheap" => new[] { "openrouter", "groq" }.Where(k => !has(k)).ToList(),
+        _ => Array.Empty<string>(),
+    };
 }

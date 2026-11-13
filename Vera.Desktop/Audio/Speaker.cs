@@ -153,8 +153,9 @@ public sealed class Speaker
             return AudioTools.DecodeWav(wav);
         }
         if (r.Audio is not { Length: > 0 }) return null;
-        var pcm = AudioTools.DecodeMp3(r.Audio);
-        return AudioTools.ChangeTempo(pcm, tts.Rate);
+        // Piper отдаёт WAV, облачные голоса — MP3; если скорость уже учтена сервисом, звук не растягиваем
+        var pcm = r.Mime.Contains("wav", StringComparison.OrdinalIgnoreCase) ? AudioTools.DecodeWav(r.Audio) : AudioTools.DecodeMp3(r.Audio);
+        return r.RateApplied ? pcm : AudioTools.ChangeTempo(pcm, tts.Rate);
     }
 
     public void Stop()

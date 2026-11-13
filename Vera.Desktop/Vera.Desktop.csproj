@@ -24,13 +24,14 @@
     <DebugType Condition="'$(Configuration)' == 'Release'">embedded</DebugType>
   </PropertyGroup>
 
-  <!-- Однофайловая публикация: сжимаем, чтобы установщик был поменьше -->
+  <!-- Однофайловая публикация (сейчас не используется: портативная версия — папка, так надёжнее грузятся llama.cpp и Whisper) -->
   <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vera.Core\Vera.Core.csproj" />
+    <ProjectReference Include="..\Vera.LocalAI\Vera.LocalAI.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,9 +43,30 @@
   <!-- Пиксель-арт и иконки подключаем ссылками (файлы остаются в assets/ и build/) -->
   <ItemGroup>
     <Resource Include="..\assets\vera\*.png" Link="assets\vera\%(Filename)%(Extension)" />
+    <Resource Include="..\assets\skins\halo\*.png" Link="assets\skins\halo\%(Filename)%(Extension)" />
     <Resource Include="..\assets\icon.png" Link="assets\icon.png" />
     <Resource Include="..\assets\tray.png" Link="assets\tray.png" />
     <Resource Include="..\build\icon.ico" Link="assets\icon.ico" />
+  </ItemGroup>
+
+  <!--
+    Пакеты LLamaSharp и Whisper.net кладут нативные библиотеки для всех ОС (их props не знают RID проекта Vera.LocalAI).
+    После публикации под win-x64 убираем чужие: Linux, macOS, ARM, x86.
+  -->
+  <Target Name="VeraTrimForeignNatives" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <ItemGroup>
+      <_VeraForeignFile Include="$(PublishDir)runtimes\**\*" Exclude="$(PublishDir)runtimes\win-x64\**\*" />
+      <_VeraForeignFile Include="$(PublishDir)*.so;$(PublishDir)*.dylib;$(PublishDir)*.metal;$(PublishDir)*.lib" />
+      <_VeraForeignDir Include="linux-x64;linux-arm;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64;macos-x64;macos-arm64;win-arm64;win-x86;win-arm;browser-wasm;maccatalyst" />
+    </ItemGroup>
+    <Delete Files="@(_VeraForeignFile)" />
+    <RemoveDir Directories="@(_VeraForeignDir->'$(PublishDir)runtimes\%(Identity)')" />
+    <Message Importance="high" Text="Вера: убрано чужих нативных файлов: @(_VeraForeignFile->Count())" />
+  </Target>
+
+  <!-- Silero VAD (2 МБ) лежит рядом с exe: его читает ONNX Runtime по пути -->
+  <ItemGroup>
+    <None Include="..\assets\models\silero_vad.onnx" Link="assets\models\silero_vad.onnx" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
 </Project>

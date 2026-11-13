@@ -103,3 +103,24 @@ TurnFailed(TurnId, Message, Aborted, PartialText, Source)
   - `VeraSprite.Compose(..., Posture posture, legFrame)` — `Stand` | `Bar` | `Floor` (слои `floor_<pose>`);
   - `Skins.All`, `Skins.Get(id)`, `Skins.HaloPose(emotion, mode, posture)` — покадровый скин «halo» (`assets/skins/halo`).
 - **ПК:** `Pet.X` / `Pet.Y` хранятся в **физических пикселях** экрана (не в DIP).
+
+## Локальный ИИ на ПК (`Vera.LocalAI`, только Windows)
+
+```csharp
+var local = new LocalAiService(core, modelsRoot, sileroPath);  // после VeraCore
+local.Attach();   // провайдер "local" + Speech.LocalTranscriber (Whisper) + LocalSynthesizer (Piper)
+recorder.SpeechProbability = local.VadHook();                  // Silero вместо порога громкости
+var wake = local.CreateWakeWord();                             // Vosk; null — модель не скачана
+```
+- `local.Store` (`ModelStore`):
+  - `InstallAsync(asset, progress, ct)` — докачка через Range, распаковка zip/nupkg;
+  - `IsInstalled`, `Delete`, `PathOf`, `UsedBytes()`.
+- `ModelCatalog.Llms / Voice / Backends` — что можно скачать (URL, размер, качество команд и русского).
+- `local.Hardware` — память, ядра, AVX2, Vulkan/NVIDIA; `RecommendedLlm()`, `RecommendedWhisper()`.
+- `local.Llm` (`LocalLlmProvider`):
+  - `Status` — «Загружаю модель… 40%»;
+  - `TestAsync()`, `ResolveModelPath(model)`;
+  - `Engine.Unload()`.
+- Модель "local" в `Settings.Models["local"]` — полный путь к `.gguf` (или id из каталога).
+- Ускоритель (`Local.Backend`) выбирается один раз за запуск: `LlamaEngine.BackendLocked`, `ActiveBackend`.
+- Настройки: `SettingsService.Export()` / `Import(json)` / `Reset()`; наборы — `SettingsPresets.All`, `MissingKeys(id, has)`.

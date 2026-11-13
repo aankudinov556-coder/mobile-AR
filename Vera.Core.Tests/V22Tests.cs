@@ -223,3 +223,51 @@ public class SkinTests
         foreach (var name in Skins.HaloPoses.Keys) Assert.True(File.Exists(Path.Combine(dir, name + ".png")), name);
     }
 }
+
+public class SettingsTransferTests
+{
+    [Fact]
+    public void ExportImportKeepsLocalThings()
+    {
+        var a = new SettingsService(new MemStorage());
+        a.Update(s => { s.Persona = "kind"; s.Pet.Scale = 5; s.Pet.X = 100; s.Local.ModelPath = @"C:\a.gguf"; });
+        var json = a.Export();
+        Assert.DoesNotContain("sk-", json);
+
+        var b = new SettingsService(new MemStorage());
+        b.Update(s => { s.Pet.X = 7; s.Local.ModelPath = @"D:\mine.gguf"; });
+        var changed = 0;
+        b.Changed += _ => changed++;
+        b.Import(json);
+        Assert.Equal("kind", b.Current.Persona);
+        Assert.Equal(5, b.Current.Pet.Scale);
+        Assert.Equal(7, b.Current.Pet.X);                    // позиция — своя
+        Assert.Equal(@"D:\mine.gguf", b.Current.Local.ModelPath); // путь к модели — свой
+        Assert.Equal(1, changed);
+        Assert.Throws<FormatException>(() => b.Import("не json"));
+    }
+
+    [Fact]
+    public void ResetRestoresDefaults()
+    {
+        var s = new SettingsService(new MemStorage());
+        s.Update(x => { x.Persona = "kind"; x.Pet.Y = 42; });
+        s.Reset();
+        Assert.Equal(new VeraSettings().Persona, s.Current.Persona);
+        Assert.Equal(42, s.Current.Pet.Y);
+        Assert.False(s.Current.FirstRun);
+        Assert.True(s.Current.Models.ContainsKey("local"));
+    }
+
+    [Fact]
+    public void PresetsApply()
+    {
+        var s = new SettingsService(new MemStorage());
+        s.Update(SettingsPresets.All.First(p => p.Id == "offline").Apply);
+        Assert.Equal("local", s.Current.Provider);
+        Assert.Equal("piper", s.Current.Tts.Engine);
+        Assert.Equal("whisper", s.Current.Stt.Provider);
+        Assert.Equal(new[] { "openai" }, SettingsPresets.MissingKeys("quality", k => k == "anthropic"));
+        Assert.Empty(SettingsPresets.MissingKeys("offline", _ => false));
+    }
+}

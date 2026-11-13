@@ -66,17 +66,33 @@ jobs:
           dotnet test Vera.Core.Tests -c Release --logger "console;verbosity=normal"
           dotnet test Vera.LocalAI.Tests -c Release --logger "console;verbosity=normal"
 
-      - name: Publish (single file, self-contained)
+      # Папка, а не один exe: нативные библиотеки llama.cpp / Whisper / Vosk / ONNX Runtime
+      # должны лежать рядом с программой (runtimes\win-x64\...), иначе их не найти.
+      - name: Publish (self-contained folder)
         run: >
           dotnet publish Vera.Desktop/Vera.Desktop.csproj -c Release -r win-x64 --self-contained
-          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-          -o out/publish
+          -p:PublishSingleFile=false
+          -o out/Vera
+
+      - name: Check native libraries
+        run: |
+          $need = @(
+            'out/Vera/Vera.exe',
+            'out/Vera/runtimes/win-x64/native/avx2/llama.dll',
+            'out/Vera/runtimes/win-x64/whisper.dll',
+            'out/Vera/libvosk.dll',
+            'out/Vera/onnxruntime.dll',
+            'out/Vera/assets/models/silero_vad.onnx'
+          )
+          $missing = $need | Where-Object { -not (Test-Path $_) }
+          if ($missing) { Write-Error ("Нет файлов: " + ($missing -join ', ')); exit 1 }
+          Get-ChildItem out/Vera/runtimes -Directory | Format-Table Name
 
       - name: Portable zip
         run: |
           $v = '${{ steps.ver.outputs.version }}'
-          $files = Get-ChildItem out/publish -File | Where-Object { $_.Extension -ne '.pdb' }
-          Compress-Archive -Path $files.FullName -DestinationPath "out/Vera-Portable-$v.zip" -Force
+          Get-ChildItem out/Vera -Recurse -Filter *.pdb | Remove-Item
+          Compress-Archive -Path out/Vera -DestinationPath "out/Vera-Portable-$v.zip" -Force
           Get-ChildItem out -File | Format-Table Name, Length
 
       - name: Upload artifact

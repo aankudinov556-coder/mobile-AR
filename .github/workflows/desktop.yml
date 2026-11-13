@@ -1,13 +1,15 @@
 name: Desktop (Windows, WPF)
 
-# ПК-версия Веры (C#/WPF): тесты ядра, однофайловая сборка, установщик Inno Setup и портативный zip.
-# Публикует файлы в релиз v<версия из Directory.Build.props>.
+# ПК-версия Веры (C#/WPF): тесты ядра, однофайловая портативная сборка (zip, без установщика).
+# Публикует zip в пре-релиз v<версия из Directory.Build.props>.
+# Установщик (Vera.Desktop/installer/vera.iss) сейчас не собирается — по запросу «только ПК-билд без установщика».
 on:
   push:
     paths:
       - 'Vera.Desktop/**'
       - 'Vera.Core/**'
       - 'Vera.Core.Tests/**'
+      - 'Vera.LocalAI/**'
       - 'assets/**'
       - 'build/**'
       - 'Directory.Build.props'
@@ -67,21 +69,6 @@ jobs:
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
           -o out/publish
 
-      - name: Install Inno Setup
-        run: |
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
-          if (-not (Test-Path $iscc)) { throw "ISCC.exe не найден: $iscc" }
-          "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Build installer
-        run: |
-          $v = '${{ steps.ver.outputs.version }}'
-          $pub = (Resolve-Path out/publish).Path
-          $out = (Resolve-Path out).Path
-          & $env:ISCC "/DMyAppVersion=$v" "/DPublishDir=$pub" "/O$out" Vera.Desktop/installer/vera.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC завершился с кодом $LASTEXITCODE" }
-
       - name: Portable zip
         run: |
           $v = '${{ steps.ver.outputs.version }}'
@@ -93,19 +80,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Vera-Windows-${{ steps.ver.outputs.version }}
-          path: |
-            out/Vera-Setup-${{ steps.ver.outputs.version }}.exe
-            out/Vera-Portable-${{ steps.ver.outputs.version }}.zip
+          path: out/Vera-Portable-${{ steps.ver.outputs.version }}.zip
           if-no-files-found: error
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
-          name: Вера v${{ steps.ver.outputs.version }}
+          name: Вера v${{ steps.ver.outputs.version }} (ПК, портативная)
           target_commitish: ${{ github.sha }}
-          files: |
-            out/Vera-Setup-${{ steps.ver.outputs.version }}.exe
-            out/Vera-Portable-${{ steps.ver.outputs.version }}.zip
+          prerelease: true
+          body_path: docs/RELEASE_NOTES.md
+          files: out/Vera-Portable-${{ steps.ver.outputs.version }}.zip
           fail_on_unmatched_files: true
           overwrite_files: true

@@ -20,6 +20,8 @@ public sealed class SpeechAudio
     public string Text { get; init; } = "";
     /// <summary>Голос выключен или текст пустой.</summary>
     public bool Skip { get; init; }
+    /// <summary>Скорость речи уже учтена сервисом — платформе не нужно ускорять/замедлять звук.</summary>
+    public bool RateApplied { get; init; }
 }
 
 /// <summary>Распознавание (OpenAI / Groq) и синтез речи (OpenAI / ElevenLabs). Запись и воспроизведение делает платформа.</summary>
@@ -36,10 +38,21 @@ public sealed partial class SpeechService
         _http = http;
     }
 
+    /// <summary>Локальное распознавание (Whisper на ПК) — задаёт платформа. Используется при stt.provider == "whisper".</summary>
+    public Func<byte[], CancellationToken, Task<string>>? LocalTranscriber { get; set; }
+
+    /// <summary>Локальный синтез (Piper на ПК) — задаёт платформа. Используется при tts.engine == "piper".</summary>
+    public Func<string, CancellationToken, Task<SpeechAudio>>? LocalSynthesizer { get; set; }
+
     /// <summary>Распознать речь. Для stt.provider == "device" бросает исключение — это делает платформа.</summary>
     public async Task<string> TranscribeAsync(byte[] audio, string mime = "audio/wav", CancellationToken ct = default)
     {
         var s = _settings.Current.Stt;
+        if (s.Provider == "whisper")
+        {
+            if (LocalTranscriber is null) throw new InvalidOperationException("Локальный Whisper недоступен на этом устройстве");
+            return (await LocalTranscriber(audio, ct).ConfigureAwait(false)).Trim();
+        }
         if (s.Provider == "device") throw new InvalidOperationException("Распознавание средствами устройства выполняет платформа");
         var groq = s.Provider == "groq";
         var keyName = groq ? "groq" : "openai";
@@ -72,6 +85,13 @@ public sealed partial class SpeechService
         var clean = CleanForSpeech(text);
         if (clean.Length == 0 || t.Engine == "off") return new SpeechAudio { Skip = true };
         if (t.Engine == "system") return new SpeechAudio { UseSystemVoice = true, Text = clean };
+        if (t.Engine == "piper")
+        {
+            if (LocalSynthesizer is null) return new SpeechAudio { UseSystemVoice = true, Text = clean };
+            return await LocalSynthesizer(clean, ct).ConfigureAwait(false);
+        }
+        var rate = Math.Clamp(t.Rate, 0.5, 2.0);
+        var rateChanged = Math.Abs(rate - 1.0) > 0.02;
 
         if (t.Engine == "elevenlabs")
         {
@@ -85,7 +105,11 @@ public sealed partial class SpeechService
             {
                 ["text"] = clean,
                 ["model_id"] = string.IsNullOrWhiteSpace(t.ElevenModel) ? "eleven_multilingual_v2" : t.ElevenModel,
-                ["voice_settings"] = new JsonObject { ["stability"] = 0.4, ["similarity_boost"] = 0.8, ["style"] = 0.35, ["use_speaker_boost"] = true },
+                ["voice_settings"] = new JsonObject
+                {
+                    ["stability"] = 0.4, ["similarity_boost"] = 0.8, ["style"] = 0.35, ["use_speaker_boost"] = true,
+                    ["speed"] = Math.Clamp(rate, 0.7, 1.2),
+                },
             };
             req.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
             using var res = await _http.SendAsync(req, ct).ConfigureAwait(false);
@@ -94,7 +118,11 @@ public sealed partial class SpeechService
                 var err = await res.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 throw new ProviderException($"ElevenLabs: ошибка {(int)res.StatusCode} {(err.Length > 200 ? err[..200] : err)}", (int)res.StatusCode);
             }
-            return new SpeechAudio { Audio = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false), Mime = "audio/mpeg" };
+            return new SpeechAudio
+            {
+                Audio = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false), Mime = "audio/mpeg",
+                RateApplied = !rateChanged || (rate >= 0.7 && rate <= 1.2),
+            };
         }
 
         // OpenAI TTS
@@ -105,11 +133,12 @@ public sealed partial class SpeechService
         var model = string.IsNullOrWhiteSpace(t.OpenaiModel) ? "gpt-4o-mini-tts" : t.OpenaiModel;
         var client = new AudioClient(model, new ApiKeyCredential(okey), options);
         var so = new SpeechGenerationOptions { ResponseFormat = GeneratedSpeechFormat.Mp3 };
+        if (rateChanged) so.SpeedRatio = (float)rate; // скорость делает сам сервис — звук не нужно растягивать
         if (model.Contains("gpt-4o") && !string.IsNullOrWhiteSpace(t.OpenaiInstructions)) so.Instructions = t.OpenaiInstructions;
         try
         {
             var res = await client.GenerateSpeechAsync(clean, new GeneratedSpeechVoice(string.IsNullOrWhiteSpace(t.OpenaiVoice) ? "shimmer" : t.OpenaiVoice), so, ct).ConfigureAwait(false);
-            return new SpeechAudio { Audio = res.Value.ToArray(), Mime = "audio/mpeg" };
+            return new SpeechAudio { Audio = res.Value.ToArray(), Mime = "audio/mpeg", RateApplied = true };
         }
         catch (ClientResultException e)
         {

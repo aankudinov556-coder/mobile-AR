@@ -637,6 +637,79 @@ def legs_sit(frame):
     return l
 
 
+# ---------------------------------------------------------------- поза «сидит на полу» (ноги поджаты)
+def floor_boots():
+    """Ботинки, выглядывающие по бокам из-под юбки."""
+    l = Layer()
+    for sx in (0, 1):
+        pts = [(13, 62), (19, 61), (21, 64), (20, 66), (12, 66), (11, 64)]
+        l.poly(mirror_poly(pts) if sx else pts, BOOT, "boot")
+        hl = [(13, 63), (14, 63), (15, 63)]
+        l.pts([(mx(x), y) for x, y in hl] if sx else hl, BOOT_H, "boot")
+    return l
+
+
+def floor_body():
+    """Торс + юбка, раскрытая по полу."""
+    l = body("idle", sitting=True)
+    skirt = [(22, 57), (42, 57), (46, 60), (50, 63), (48, 66), (16, 66), (14, 63), (18, 60)]
+    l.poly(skirt, SKIRT, "skirt")
+    for x in (18, 23, 28, 36, 41, 46):
+        l.vline(x, 60, 65, SKIRT_S, "skirt", clip={"skirt"})
+    l.hline(15, 49, 65, SKIRT_S, "skirt", clip={"skirt"})
+    l.hline(21, 43, 57, SKIRT_S, "skirt", clip={"skirt"})
+    return l
+
+
+def floor_knees():
+    """Колени спереди — над подолом юбки."""
+    l = Layer()
+    for cx in (28.3, W - 28.3):
+        l.ellipse(cx, 64.6, 3.1, 2.1, SKIN, "skin")
+    for x0 in (26, mx(30)):
+        l.hline(x0, x0 + 4, 66, SKIN_S, "skin", clip={"skin"})
+    l.pts([(27, 63), (28, 63), (mx(27), 63), (mx(28), 63)], SKIN_L, "skin", clip={"skin"})
+    return l
+
+
+LAP_SLEEVE = [(23, 42), (25, 46), (29, 54), (28, 57), (23, 57), (18, 51), (20, 44)]
+
+
+def arm_lap(right=False):
+    """Рука опущена на колени, ладошка лежит на юбке."""
+    l = Layer()
+    l.ellipse(W - 29.5 if right else 29.5, 58.2, 2.7, 2.1, SKIN, "skin")
+    l.poly(mirror_poly(LAP_SLEEVE) if right else LAP_SLEEVE, JACKET, "jacket")
+    cuff = [(22, 55), (28, 55), (28, 57), (23, 57)]
+    l.poly(mirror_poly(cuff) if right else cuff, JACKET_S, "jacket", clip={"jacket"})
+    edge = [(21, 54), (22, 54), (23, 54), (24, 54), (25, 54), (26, 54), (27, 54)]
+    l.pts([(mx(x), y) for x, y in edge] if right else edge, JACKET_H, "jacket", clip={"jacket"})
+    return l
+
+
+def build_floor(pose):
+    """Тело Веры, сидящей на полу (без глаз/рта/румянца, чёлки и руки у лица — они общими слоями)."""
+    base = Layer()
+    base.paste(hair_back().outlined())
+    base.paste(floor_boots().outlined())
+    if pose == "giggle":
+        base.paste(arm_left_raise_to_mouth().outlined(base, merge=()))
+    base.paste(floor_body().outlined())
+    base.paste(floor_knees().outlined(base, merge=()))
+    if pose != "giggle":
+        base.paste(arm_lap(False).outlined())
+    if pose == "wave":
+        base.paste(arm_right_wave().outlined())
+    elif pose == "think":
+        base.paste(arm_right_raise_to_chin().outlined())
+    else:
+        base.paste(arm_lap(True).outlined())
+    base.paste(neck().outlined(base, merge={"jacket", "shirt", "ribbon"}))
+    base.paste(face().outlined(base, merge={"skin"}))
+    base.hline(29, 34, 40, SKIN_S, "skin", clip={"skin"})
+    return base
+
+
 def build_sit(pose):
     """Тело сидящей Веры (без ног — их рисует отдельный слой под юбкой)."""
     hb = hair_back().outlined()
@@ -749,6 +822,9 @@ def main():
         save(build_sit(pose), os.path.join(OUT_DIR, f"sit_{pose}.png"))
     for fr in (0, 1, 2):
         save(legs_sit(fr).outlined(), os.path.join(OUT_DIR, f"legs_sit_{fr}.png"))
+    # сидит на полу (ПК: когда скучно)
+    for pose in POSES:
+        save(build_floor(pose), os.path.join(OUT_DIR, f"floor_{pose}.png"))
     for k in EYES:
         save(eyes_layer(k), os.path.join(OUT_DIR, f"eyes_{k}.png"))
     for k in MOUTHS:

@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Vera.Core.Documents;
 using Vera.Core.Providers;
 using Vera.Core.Tools;
 
@@ -14,6 +17,12 @@ public sealed record TurnStarted(string TurnId, string Source, string UserText, 
 /// <summary>Кусочек текста ответа (тег эмоции уже вырезан). Step — номер шага модели в ходе.</summary>
 public sealed record TextDelta(string TurnId, int Step, string Delta) : AgentEvent(TurnId);
 
+/// <summary>
+/// Текст шага целиком заменён (например, модель написала вызов инструмента JSON-ом — его убрали из ответа).
+/// UI должен заменить текст этого шага на Text.
+/// </summary>
+public sealed record TextReplaced(string TurnId, int Step, string Text) : AgentEvent(TurnId);
+
 public sealed record EmotionChanged(string TurnId, string Emotion) : AgentEvent(TurnId);
 
 /// <summary>Вызов инструмента: Running=true — начался, false — закончился (Label/IsError/Kind заполнены).</summary>
@@ -22,6 +31,12 @@ public sealed record ToolActivity(string TurnId, string CallId, string Name, boo
 public sealed record TurnEnded(string TurnId, string Text, string Emotion, string Source) : AgentEvent(TurnId);
 
 public sealed record TurnFailed(string TurnId, string Message, bool Aborted, string PartialText, string Source) : AgentEvent(TurnId);
+
+/// <summary>Вера ещё отвечает на прошлое сообщение.</summary>
+public sealed class AgentBusyException : InvalidOperationException
+{
+    public AgentBusyException() : base("Вера ещё отвечает на прошлое сообщение") { }
+}
 
 // ============================================================================ visible history
 
@@ -37,6 +52,8 @@ public sealed class VisibleMessage
     public List<ToolChip> Tools { get; } = new();
     public string? Emotion { get; init; }
     public string? TurnId { get; init; }
+    /// <summary>Имена приложенных документов.</summary>
+    public List<string> Documents { get; init; } = new();
 }
 
 // ============================================================================ tag filter
@@ -112,6 +129,12 @@ public sealed class VeraAgent
     private List<VeraMessage> _history;
     private CancellationTokenSource? _cts;
 
+    /// <summary>Документы сессии для read_document (id → полный текст).</summary>
+    private readonly ConcurrentDictionary<string, DocumentText> _docs = new();
+
+    /// <summary>Модели, которые отвергли нативные инструменты, — для них инструменты описываются в промпте.</summary>
+    private static readonly ConcurrentDictionary<string, bool> TextToolModels = new();
+
     public VeraAgent(SettingsService settings, ProviderRegistry providers, ToolRegistry tools, MemoryService memory, IVeraStorage storage, string platform)
     {
         _settings = settings;
@@ -126,6 +149,12 @@ public sealed class VeraAgent
     /// <summary>События хода. Вызываются из фонового потока — UI должен перейти в свой поток.</summary>
     public event Action<AgentEvent>? Event;
 
+    /// <summary>Счётчик расходов (если задан — пополняется после каждого вызова модели).</summary>
+    public UsageService? Usage { get; set; }
+
+    /// <summary>Журнал запросов (пишется, если включён в настройках).</summary>
+    public RequestLog? Log { get; set; }
+
     public bool IsBusy { get; private set; }
 
     private void Emit(AgentEvent e)
@@ -139,6 +168,7 @@ public sealed class VeraAgent
     {
         Stop();
         lock (_gate) _history = new List<VeraMessage>();
+        _docs.Clear();
         Persist();
     }
 
@@ -151,7 +181,11 @@ public sealed class VeraAgent
         {
             if (m.Role == "user" && !m.Hidden)
             {
-                outList.Add(new VisibleMessage { Role = "user", Text = m.Text ?? "", Time = m.Ts, HasImage = m.Images is { Count: > 0 } || m.HadImages });
+                outList.Add(new VisibleMessage
+                {
+                    Role = "user", Text = m.Text ?? "", Time = m.Ts, HasImage = m.Images is { Count: > 0 } || m.HadImages,
+                    Documents = m.DocNames?.ToList() ?? new List<string>(),
+                });
             }
             else if (m.Role == "assistant")
             {
@@ -185,60 +219,73 @@ public sealed class VeraAgent
         return outList;
     }
 
+    private static VeraMessage Light(VeraMessage m, string? note = null) => new()
+    {
+        Role = m.Role, Text = note is null ? m.Text : (m.Text ?? "") + note, HadImages = m.HadImages || m.Images is { Count: > 0 }, Ctx = m.Ctx,
+        Ts = m.Ts, Source = m.Source, Hidden = m.Hidden, ToolCalls = m.ToolCalls, ToolCallId = m.ToolCallId, Name = m.Name,
+        IsError = m.IsError, Label = m.Label, TurnId = m.TurnId, Emotion = m.Emotion, DocNames = m.DocNames,
+    };
+
     private void Persist()
     {
         List<VeraMessage> data;
         lock (_gate)
         {
             if (_history.Count > MaxSaved * 2) _history.RemoveRange(0, _history.Count - MaxSaved);
-            data = _history.Skip(Math.Max(0, _history.Count - MaxSaved)).Select(m =>
-            {
-                if (m.Images is not { Count: > 0 }) return m;
-                return new VeraMessage
-                {
-                    Role = m.Role, Text = m.Text, HadImages = true, Ctx = m.Ctx, Ts = m.Ts, Source = m.Source, Hidden = m.Hidden,
-                    ToolCalls = m.ToolCalls, ToolCallId = m.ToolCallId, Name = m.Name, IsError = m.IsError, Label = m.Label,
-                    TurnId = m.TurnId, Emotion = m.Emotion,
-                };
-            }).ToList();
+            data = _history.Skip(Math.Max(0, _history.Count - MaxSaved))
+                .Select(m => m.Images is { Count: > 0 } || m.Documents is { Count: > 0 } ? Light(m) : m).ToList();
         }
         _file.Data = data;
         _file.Save();
     }
 
     /// <summary>Последние N сообщений начиная с user (пары tool_use/tool_result не разрываются).</summary>
-    private List<VeraMessage> ContextWindow()
+    private List<VeraMessage> ContextWindow(int? limitOverride = null)
     {
-        var limit = Math.Max(6, _settings.Current.HistoryLimit);
+        var limit = Math.Max(6, limitOverride ?? _settings.Current.HistoryLimit);
         List<VeraMessage> h;
         lock (_gate) h = _history.ToList();
         var start = Math.Max(0, h.Count - limit);
         while (start < h.Count && h[start].Role != "user") start++;
         var slice = h.Skip(start).ToList();
-        // картинки оставляем только у двух последних ходов — экономия токенов
+        // картинки и документы оставляем только у двух последних ходов — экономия токенов
         var userIdx = slice.Select((m, i) => (m, i)).Where(x => x.m.Role == "user").Select(x => x.i).ToList();
         var keepFrom = userIdx.Count > 2 ? userIdx[^2] : 0;
         return slice.Select((m, i) =>
         {
-            var hasImg = m.Images is { Count: > 0 };
-            if ((i >= keepFrom && hasImg) || (!hasImg && !m.HadImages)) return m;
-            return new VeraMessage
-            {
-                Role = m.Role, Text = (m.Text ?? "") + " [к сообщению было приложено изображение]", Ctx = m.Ctx, Ts = m.Ts,
-                ToolCalls = m.ToolCalls, ToolCallId = m.ToolCallId, Name = m.Name, IsError = m.IsError, TurnId = m.TurnId,
-            };
+            var heavy = m.Images is { Count: > 0 } || m.Documents is { Count: > 0 };
+            if (i >= keepFrom && heavy) return m;
+            if (!heavy && !m.HadImages && m.DocNames is not { Count: > 0 }) return m;
+            var notes = new List<string>();
+            if (m.HadImages || m.Images is { Count: > 0 }) notes.Add("[к сообщению было приложено изображение]");
+            if (m.DocNames is { Count: > 0 }) notes.Add($"[были приложены документы: {string.Join(", ", m.DocNames)}]");
+            var light = Light(m, " " + string.Join(" ", notes));
+            light.HadImages = false;
+            return light;
         }).ToList();
     }
+
+    private static ToolDefinition ReadDocumentTool() => new()
+    {
+        Name = "read_document",
+        Description = "Read another part of a long document the user attached (when the message says the document is longer).",
+        Parameters = ToolDefinition.Schema(new JsonObject
+        {
+            ["id"] = ToolDefinition.Str("Document id from the <document id=...> tag."),
+            ["part"] = ToolDefinition.Num("Part number, starting from 1."),
+        }, "id", "part"),
+    };
 
     /// <summary>
     /// Отправить сообщение. source: "chat" | "voice" | "screen" | "system".
     /// Ошибки приходят событием TurnFailed (и пробрасываются, если это не отмена).
     /// </summary>
-    public async Task SendAsync(string text, IReadOnlyList<ImageData>? images = null, string source = "chat", bool hidden = false, CancellationToken ct = default)
+    public async Task SendAsync(string text, IReadOnlyList<ImageData>? images = null, string source = "chat", bool hidden = false,
+        CancellationToken ct = default, IReadOnlyList<DocumentText>? documents = null)
     {
         lock (_gate)
         {
-            if (IsBusy) throw new InvalidOperationException("Вера ещё отвечает на прошлое сообщение");
+            if (IsBusy) throw new AgentBusyException();
             IsBusy = true;
         }
         var settings = _settings.Current;
@@ -251,15 +298,20 @@ public sealed class VeraAgent
         try
         {
             text = (text ?? "").Trim();
-            if (text.Length == 0 && images is not { Count: > 0 }) throw new ArgumentException("Пустое сообщение");
-            var provider = _providers.Get(settings.Provider);
+            var docs = documents?.Where(d => d is not null).ToList() ?? new List<DocumentText>();
+            if (text.Length == 0 && images is not { Count: > 0 } && docs.Count == 0) throw new ArgumentException("Пустое сообщение");
+            var providerId = settings.Provider;
+            var provider = _providers.Get(providerId);
             var model = settings.CurrentModel;
 
+            foreach (var d in docs) _docs[d.Id] = d;
             var user = new VeraMessage
             {
                 Role = "user",
-                Text = text.Length > 0 ? text : "Что на этом изображении?",
+                Text = text.Length > 0 ? text : docs.Count > 0 ? "Посмотри документ." : "Что на этом изображении?",
                 Images = images is { Count: > 0 } ? images.ToList() : null,
+                Documents = docs.Count > 0 ? docs.Select(DocumentReader.ForMessage).ToList() : null,
+                DocNames = docs.Count > 0 ? docs.Select(d => d.Name).ToList() : null,
                 Ctx = RuText.TimeContext(DateTimeOffset.Now),
                 Source = source,
                 Hidden = hidden,
@@ -268,10 +320,19 @@ public sealed class VeraAgent
             Emit(new TurnStarted(turnId, source, user.Text!, user.Images is not null, hidden));
 
             // system и tools фиксируются на весь ход — внутри хода история только дописывается
-            var toolDefs = _tools.GetDefinitions(settings);
-            var system = Personas.BuildSystemPrompt(settings, _memory.ForPrompt(), toolDefs.Select(t => t.Name).ToList(), _platform);
+            var toolDefs = _tools.GetDefinitions(settings).ToList();
+            if (!_docs.IsEmpty) toolDefs.Add(ReadDocumentTool());
+            var toolNames = toolDefs.Select(t => t.Name).ToList();
+            var system = Personas.BuildSystemPrompt(settings, _memory.ForPrompt(), toolNames, _platform);
+            var textTools = TextToolModels.ContainsKey(providerId + "|" + model);
+            if (textTools) system += "\n\n" + ToolPrompt.Describe(toolDefs, compact: true);
             var conv = provider.Begin(ContextWindow());
-            var request = new StepRequest { Model = model, System = system, Tools = toolDefs, Effort = settings.Effort, WebSearch = settings.WebSearch };
+            StepRequest MakeRequest() => new()
+            {
+                Model = model, System = system, Tools = textTools ? Array.Empty<ToolDefinition>() : toolDefs,
+                Effort = settings.Effort, WebSearch = settings.WebSearch,
+            };
+            var request = MakeRequest();
 
             void OnEmotion(string e)
             {
@@ -295,6 +356,16 @@ public sealed class VeraAgent
                         Emit(new TextDelta(turnId, stepNo, clean));
                     }, token).ConfigureAwait(false);
                 }
+                catch (ProviderException pe) when (pe.ToolsUnsupported && !textTools && settings.ToolCallFallback && stepText.Length == 0)
+                {
+                    // модель не умеет нативные инструменты — описываем их в промпте и повторяем шаг
+                    TextToolModels[providerId + "|" + model] = true;
+                    textTools = true;
+                    system += "\n\n" + ToolPrompt.Describe(toolDefs, compact: true);
+                    request = MakeRequest();
+                    step--;
+                    continue;
+                }
                 catch (OperationCanceledException)
                 {
                     if (stepText.Length > 0)
@@ -307,17 +378,33 @@ public sealed class VeraAgent
                 var tail = filter.Flush();
                 if (tail.Length > 0) Emit(new TextDelta(turnId, step, tail));
 
-                var clean = TagFilter.Strip(res.Text);
+                Usage?.Record(providerId, model, res.InputTokens, res.OutputTokens);
+                if (settings.Diagnostics.LogRequests) Log?.Add(providerId, model, step, res.Raw ?? res.Text);
+
+                var calls = res.ToolCalls;
+                var clean = TagFilter.Strip(ToolCallParser.StripThinking(res.Text));
+                var fromText = false;
+                if (calls.Count == 0 && res.Stop != "refusal" && settings.ToolCallFallback &&
+                    ToolCallParser.TryExtract(clean, toolNames, out var found, out var cleaned, strict: !textTools))
+                {
+                    // модель написала вызов инструмента текстом — выполняем его и убираем JSON из ответа
+                    fromText = true;
+                    var prefix = "txt_" + Guid.NewGuid().ToString("N")[..8] + "_";
+                    calls = found.Select((c, i) => new ToolCall { Id = prefix + i, Name = c.Name, Args = c.Args }).ToList();
+                    clean = TagFilter.Strip(cleaned);
+                    Emit(new TextReplaced(turnId, step, clean));
+                }
+
                 var asst = new VeraMessage { Role = "assistant", Text = clean, TurnId = turnId, Emotion = emotion };
-                if (res.ToolCalls.Count > 0) asst.ToolCalls = res.ToolCalls.Select(tc => new ToolCall { Id = tc.Id, Name = tc.Name, Args = tc.Args }).ToList();
+                if (calls.Count > 0) asst.ToolCalls = calls.Select(tc => new ToolCall { Id = tc.Id, Name = tc.Name, Args = tc.Args }).ToList();
                 lock (_gate) _history.Add(asst);
                 Append(fullText, clean);
 
                 if (res.Stop == "pause") continue;
-                if (res.ToolCalls.Count == 0) break;
+                if (calls.Count == 0) break;
 
                 var results = new List<ToolExecution>();
-                foreach (var tc in res.ToolCalls)
+                foreach (var tc in calls)
                 {
                     if (token.IsCancellationRequested)
                     {
@@ -325,7 +412,9 @@ public sealed class VeraAgent
                         continue;
                     }
                     Emit(new ToolActivity(turnId, tc.Id, tc.Name, true, tc.Name, false, null));
-                    var r = await _tools.ExecuteAsync(tc.Name, tc.Args, token).ConfigureAwait(false);
+                    var r = tc.Name == "read_document"
+                        ? ReadDocument(tc.Args)
+                        : await _tools.ExecuteAsync(tc.Name, tc.Args, token).ConfigureAwait(false);
                     results.Add(new ToolExecution(tc.Id, tc.Name, r));
                     var call = asst.ToolCalls!.First(x => x.Id == tc.Id);
                     call.Label = r.Label;
@@ -342,7 +431,13 @@ public sealed class VeraAgent
                         });
                     }
                 }
-                provider.AppendToolResults(conv, results);
+                if (fromText)
+                {
+                    // в «родной» переписке вызова не было — результаты передаём сообщением пользователя
+                    var imgs = results.SelectMany(r => r.Result.Images ?? Array.Empty<ImageData>()).ToList();
+                    provider.AppendUserText(conv, ToolPrompt.Results(results.Select(r => (r.Name, r.Result))), imgs.Count > 0 ? imgs : null);
+                }
+                else provider.AppendToolResults(conv, results);
                 token.ThrowIfCancellationRequested();
                 if (step == MaxSteps - 1) Append(fullText, "(Слишком много шагов подряд — остановилась.)");
             }
@@ -365,6 +460,18 @@ public sealed class VeraAgent
             _cts = null;
             Persist();
         }
+    }
+
+    private ToolResult ReadDocument(JsonObject args)
+    {
+        var id = args.Str("id") ?? "";
+        if (!_docs.TryGetValue(id, out var doc))
+        {
+            doc = _docs.Values.FirstOrDefault(d => d.Name.Contains(id, StringComparison.OrdinalIgnoreCase));
+            if (doc is null) return ToolResult.Error($"Документ «{id}» не найден (документы живут только до перезапуска).", "📄 не найден");
+        }
+        var (text, part, parts) = DocumentReader.GetPart(doc.Text, (int)(args.Num("part") ?? 1));
+        return ToolResult.Ok($"Документ «{doc.Name}», часть {part} из {parts}:\n\n{text}", $"📄 {doc.Name} · {part}/{parts}");
     }
 
     private static void Append(StringBuilder sb, string s)

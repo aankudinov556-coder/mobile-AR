@@ -42,10 +42,21 @@ internal sealed class MockServer : IDisposable
             var body = await reader.ReadToEndAsync();
             var json = string.IsNullOrWhiteSpace(body) ? new JsonObject() : (JsonNode.Parse(body) as JsonObject ?? new JsonObject());
             lock (Requests) Requests.Add((ctx.Request.Url!.AbsolutePath, json, ctx.Request.Headers["anthropic-beta"]));
+            var chunks = _handler(ctx.Request.Url.AbsolutePath, json).ToList();
+            if (chunks.Count > 0 && chunks[0].StartsWith("STATUS:"))
+            {
+                // ошибка: STATUS:404 + тело JSON
+                ctx.Response.StatusCode = int.Parse(chunks[0][7..]);
+                ctx.Response.ContentType = "application/json";
+                var err = Encoding.UTF8.GetBytes(string.Concat(chunks.Skip(1)));
+                await ctx.Response.OutputStream.WriteAsync(err);
+                ctx.Response.Close();
+                continue;
+            }
             ctx.Response.ContentType = "text/event-stream";
             ctx.Response.SendChunked = true;
             var output = ctx.Response.OutputStream;
-            foreach (var chunk in _handler(ctx.Request.Url.AbsolutePath, json))
+            foreach (var chunk in chunks)
             {
                 var bytes = Encoding.UTF8.GetBytes(chunk);
                 await output.WriteAsync(bytes);
@@ -240,5 +251,86 @@ public class AgentIntegrationTests
         Assert.NotNull(failed);
         Assert.Contains("ключ", failed!.Message);
         Assert.False(core.Agent.IsBusy);
+    }
+}
+
+public class FallbackIntegrationTests
+{
+    private static string Chunk(JsonObject delta, string? finish = null) =>
+        "data: " + new JsonObject
+        {
+            ["id"] = "x", ["object"] = "chat.completion.chunk", ["created"] = 1, ["model"] = "mock",
+            ["choices"] = new JsonArray(new JsonObject { ["index"] = 0, ["delta"] = delta, ["finish_reason"] = finish }),
+        }.ToJsonString() + "\n\n";
+
+    private static IEnumerable<string> Say(string text) => new[]
+    {
+        Chunk(new JsonObject { ["role"] = "assistant", ["content"] = text }), Chunk(new JsonObject(), "stop"), "data: [DONE]\n\n",
+    };
+
+    [Fact]
+    public async Task JsonWrittenAsTextIsExecuted()
+    {
+        using var server = new MockServer((path, body) =>
+        {
+            var last = body["messages"]!.AsArray()[^1]!;
+            var lastText = last["content"]?.ToJsonString() ?? "";
+            return lastText.Contains("tool_response")
+                ? Say("[happy] Готово, напомню!")
+                : Say("[think] {\"name\": \"create_reminder\", \"arguments\": {\"text\": \"Позвонить\", \"in_minutes\": 10}}");
+        });
+        Environment.SetEnvironmentVariable("VERA_OPENAI_BASE_URL", server.Base + "/v1");
+        try
+        {
+            var secrets = new MemSecrets();
+            secrets.Set("openai", "sk-test");
+            var core = new VeraCore(new MemStorage(), secrets, null, "desktop");
+            core.Settings.Update(s => { s.Provider = "openai"; s.Models["openai"] = "mock-model"; });
+            var events = new List<AgentEvent>();
+            core.Agent.Event += e => { lock (events) events.Add(e); };
+            await core.Agent.SendAsync("напомни через 10 минут позвонить");
+
+            Assert.Equal("Позвонить", Assert.Single(core.Reminders.List()).Text);
+            var replaced = Assert.Single(events.OfType<TextReplaced>());
+            Assert.Equal("", replaced.Text);
+            Assert.Equal(2, server.Requests.Count);
+            var second = server.Requests[1].Body["messages"]!.AsArray();
+            Assert.Equal("user", second[^1]!["role"]!.GetValue<string>());
+            Assert.Contains("tool_response", second[^1]!["content"]!.ToJsonString());
+            var end = Assert.Single(events.OfType<TurnEnded>());
+            Assert.DoesNotContain("create_reminder", end.Text);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VERA_OPENAI_BASE_URL", null);
+        }
+    }
+
+    [Fact]
+    public async Task ModelWithoutToolsGetsToolsInPrompt()
+    {
+        using var server = new MockServer((path, body) =>
+        {
+            if (body["tools"] is JsonArray)
+                return new[] { "STATUS:404", "{\"error\":{\"message\":\"No endpoints found that support tool use.\",\"code\":404}}" };
+            var last = body["messages"]!.AsArray()[^1]!;
+            if ((last["content"]?.ToJsonString() ?? "").Contains("tool_response")) return Say("Поставила~");
+            return Say("<tool_call>{\"name\": \"create_reminder\", \"arguments\": {\"text\": \"Чай\", \"in_minutes\": 3}}</tool_call>");
+        });
+        try
+        {
+            var core = new VeraCore(new MemStorage(), new MemSecrets(), null, "desktop");
+            core.Settings.Update(s => { s.Provider = "custom"; s.CustomBaseUrl = server.Base + "/v1"; s.Models["custom"] = "free-model"; });
+            Assert.True(core.ProviderReady);
+            await core.Agent.SendAsync("напомни про чай");
+            Assert.Equal("Чай", Assert.Single(core.Reminders.List()).Text);
+            var noTools = server.Requests.Where(r => r.Body["tools"] is null).ToList();
+            Assert.NotEmpty(noTools);
+            Assert.Contains("# Инструменты", noTools[0].Body["messages"]![0]!["content"]!.GetValue<string>());
+        }
+        finally
+        {
+            server.Dispose();
+        }
     }
 }

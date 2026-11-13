@@ -23,10 +23,12 @@ public sealed class VeraCore : IDisposable
         Secrets = new SecretsService(secrets);
         Reminders = new ReminderService(storage);
         Memory = new MemoryService(storage);
-        Providers = new ProviderRegistry(Secrets.Get, Http);
-        Tools = new ToolRegistry(Reminders, Memory, Http, platformTools);
+        Providers = new ProviderRegistry(Secrets.Get, Http, () => Settings.Current.CustomBaseUrl);
+        Tools = new ToolRegistry(Reminders, Memory, Http, platformTools, Secrets.Get, () => Settings.Current);
         Speech = new SpeechService(Settings, Secrets, Http);
-        Agent = new VeraAgent(Settings, Providers, Tools, Memory, storage, platform);
+        Usage = new UsageService(storage);
+        RequestLog = new RequestLog(storage);
+        Agent = new VeraAgent(Settings, Providers, Tools, Memory, storage, platform) { Usage = Usage, Log = RequestLog };
     }
 
     public string Platform { get; }
@@ -39,16 +41,24 @@ public sealed class VeraCore : IDisposable
     public ToolRegistry Tools { get; }
     public SpeechService Speech { get; }
     public VeraAgent Agent { get; }
+    /// <summary>Счётчик токенов и примерной стоимости.</summary>
+    public UsageService Usage { get; }
+    /// <summary>Журнал запросов (включается в настройках: Diagnostics.LogRequests).</summary>
+    public RequestLog RequestLog { get; }
 
     private string UserName => string.IsNullOrWhiteSpace(Settings.Current.UserName) ? "семпай" : Settings.Current.UserName;
 
     /// <summary>Готовая реплика характера: "poke", "drag", "idle", "listening", "notHeard", "reminder", "missed", …</summary>
     public string Line(string kind, string? text = null) => Personas.Line(Settings.Current.Persona, kind, UserName, text);
 
+    /// <summary>Готов ли текущий провайдер (есть ключ, если он нужен).</summary>
+    public bool ProviderReady =>
+        !ProviderRegistry.NeedsKey(Settings.Current.Provider) || Secrets.Has(Settings.Current.Provider);
+
     /// <summary>Приветствие при запуске; NoKey — нет ключа текущего провайдера.</summary>
     public (string Text, bool NoKey) Greeting()
     {
-        var noKey = !Secrets.Has(Settings.Current.Provider);
+        var noKey = !ProviderReady;
         var kind = noKey ? "noKey" : Personas.GreetingKind(DateTime.Now);
         return (Line(kind), noKey);
     }
@@ -65,6 +75,9 @@ public sealed class VeraCore : IDisposable
             case "elevenlabs":
                 var v = await Speech.ElevenVoicesAsync(ct);
                 return $"Ключ работает ({v.Count} голосов)";
+            case "tavily" or "brave":
+                var (_, used) = await Vera.Core.Tools.WebSearch.SearchAsync(Http, "погода", name, Secrets.Get, 1, ct);
+                return used == name ? "Ключ работает" : "Ключ не сработал — поиск пошёл через " + used;
             default: return await Providers.Get(name).TestAsync(ct);
         }
     }
@@ -76,6 +89,7 @@ public sealed class VeraCore : IDisposable
         Reminders.Flush();
         Memory.Flush();
         Agent.Flush();
+        Usage.Flush();
     }
 
     public void Dispose()

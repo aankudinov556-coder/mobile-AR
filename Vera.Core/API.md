@@ -75,3 +75,31 @@ TurnFailed(TurnId, Message, Aborted, PartialText, Source)
 ### Прочее
 `RuText.FormatDateTime / WhenShort / Relative` — русские даты. `Personas.All` — характеры (`Label`, `TtsHint`).
 Ошибки провайдеров — `ProviderException` с готовым текстом для пользователя.
+
+## Что добавлено в v2.2
+
+- **`TextReplaced(TurnId, Step, Text)`** — текст шага заменён целиком (модель написала вызов инструмента JSON-ом,
+  его выполнили и убрали из ответа). UI заменяет текст этого шага.
+- **`AgentBusyException`** (наследник `InvalidOperationException`) — `SendAsync`, пока предыдущий ход не закончен.
+- **`SendAsync(..., documents)`** — документы из `DocumentReader.Read(bytes, fileName)` (PDF, DOCX, TXT/MD/CSV, код).
+  Длинные режутся, модель дочитывает их инструментом `read_document`.
+- **Разбор вызовов из текста** (`ToolCallParser`, настройка `ToolCallFallback`). Если модель отвергла нативные
+  инструменты, они автоматически описываются в промпте (`ToolPrompt`).
+- **Провайдеры:**
+  - `custom` — свой OpenAI-совместимый сервер (`CustomBaseUrl`);
+  - `ProviderRegistry.Register(provider)` — провайдер платформы (на ПК — `local`);
+  - `ProviderRegistry.Available`, `NeedsKey(id)`; `VeraCore.ProviderReady`.
+- **Инструменты `web_search` / `read_page`.** Настройки `Search.Enabled` и `Search.Engine`, ключи `tavily` и `brave`.
+- **Расход и журнал:**
+  - `VeraCore.Usage` — токены и примерная стоимость (`Today()`, `ThisMonth()`, `MonthByProvider()`);
+  - `VeraCore.RequestLog` — журнал запросов (`Diagnostics.LogRequests`).
+- **Голос:**
+  - `SpeechService.LocalTranscriber` (`stt.provider == "whisper"`) и `LocalSynthesizer` (`tts.engine == "piper"`) задаёт платформа;
+  - `SpeechAudio.RateApplied` — скорость уже учтена сервисом, звук растягивать не нужно.
+- **`VoiceRecorder`:**
+  - `SpeechProbability` — нейросетевой VAD вместо порога громкости;
+  - `EndProcessing()` — вернуть состояние `Off`/`Wake` после распознавания.
+- **Спрайт:**
+  - `VeraSprite.Compose(..., Posture posture, legFrame)` — `Stand` | `Bar` | `Floor` (слои `floor_<pose>`);
+  - `Skins.All`, `Skins.Get(id)`, `Skins.HaloPose(emotion, mode, posture)` — покадровый скин «halo» (`assets/skins/halo`).
+- **ПК:** `Pet.X` / `Pet.Y` хранятся в **физических пикселях** экрана (не в DIP).

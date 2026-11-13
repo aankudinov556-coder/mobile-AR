@@ -1,14 +1,8 @@
 name: Android (MAUI)
 
 # Android-версия Веры (.NET MAUI): собирает APK и публикует его в релиз v<версия из Directory.Build.props>.
+# Сейчас идёт работа только над ПК-версией — Android собирается лишь вручную (Actions → Run workflow).
 on:
-  push:
-    paths:
-      - 'Vera.Mobile/**'
-      - 'Vera.Core/**'
-      - 'assets/**'
-      - 'Directory.Build.props'
-      - '.github/workflows/android.yml'
   workflow_dispatch:
 
 permissions:

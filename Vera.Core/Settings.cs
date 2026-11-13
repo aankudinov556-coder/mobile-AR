@@ -76,7 +76,7 @@ public sealed class JsonFile<T> where T : class
 public sealed class VeraSettings
 {
     public bool FirstRun { get; set; } = true;
-    /// <summary>"openrouter" | "anthropic" | "openai"</summary>
+    /// <summary>"openrouter" | "anthropic" | "openai" | "custom" (свой OpenAI-совместимый сервер) | "local" (встроенная модель, ПК)</summary>
     public string Provider { get; set; } = "openrouter";
     public Dictionary<string, string> Models { get; set; } = new()
     {
@@ -84,6 +84,10 @@ public sealed class VeraSettings
         ["anthropic"] = "claude-opus-5-5",
         ["openai"] = "gpt-5-mini",
     };
+    /// <summary>Адрес своего OpenAI-совместимого сервера (Ollama, LM Studio, vLLM…), например http://localhost:11434/v1</summary>
+    public string CustomBaseUrl { get; set; } = "http://localhost:11434/v1";
+    /// <summary>Выполнять вызовы инструментов, которые модель написала текстом (JSON / &lt;tool_call&gt;).</summary>
+    public bool ToolCallFallback { get; set; } = true;
     /// <summary>"low" | "medium" | "high"</summary>
     public string Effort { get; set; } = "low";
     public bool WebSearch { get; set; }
@@ -102,6 +106,11 @@ public sealed class VeraSettings
     public CapabilitySettings Capabilities { get; set; } = new();
     public ReminderSettings Reminders { get; set; } = new();
     public List<AppShortcut> AppShortcuts { get; set; } = new();
+    /// <summary>Скин маскота: "vera" (пиксельная) | "halo" (рисунок пользователя).</summary>
+    public string Skin { get; set; } = "vera";
+    public SearchSettings Search { get; set; } = new();
+    public LocalModelSettings Local { get; set; } = new();
+    public DiagnosticsSettings Diagnostics { get; set; } = new();
     public bool Autostart { get; set; }
     /// <summary>"auto" | "dark" | "light"</summary>
     public string Theme { get; set; } = "auto";
@@ -112,6 +121,8 @@ public sealed class VeraSettings
     {
         "anthropic" => "claude-opus-5-5",
         "openai" => "gpt-5-mini",
+        "custom" => "qwen2.5:7b",
+        "local" => "",
         _ => "openai/gpt-5-mini",
     };
 
@@ -120,8 +131,10 @@ public sealed class VeraSettings
 
 public sealed class SttSettings
 {
-    /// <summary>"openai" | "groq" | "device" (распознавание средствами ОС — делает платформа)</summary>
+    /// <summary>"openai" | "groq" | "device" (средствами ОС) | "whisper" (локальный Whisper, ПК) — два последних делает платформа</summary>
     public string Provider { get; set; } = "openai";
+    /// <summary>Модель локального Whisper: "base" | "small" | "medium"</summary>
+    public string WhisperModel { get; set; } = "small";
     public string OpenaiModel { get; set; } = "gpt-4o-mini-transcribe";
     public string GroqModel { get; set; } = "whisper-large-v3-turbo";
     /// <summary>"ru", "en", … или "" — автоопределение</summary>
@@ -130,8 +143,10 @@ public sealed class SttSettings
 
 public sealed class TtsSettings
 {
-    /// <summary>"openai" | "elevenlabs" | "system" | "off"</summary>
+    /// <summary>"openai" | "elevenlabs" | "system" | "piper" (офлайн, ПК) | "off"</summary>
     public string Engine { get; set; } = "openai";
+    /// <summary>Голос Piper, например "ru_RU-irina-medium"</summary>
+    public string PiperVoice { get; set; } = "ru_RU-irina-medium";
     /// <summary>"voice" — только на голосовые запросы, "always", "never"</summary>
     public string AutoSpeak { get; set; } = "voice";
     public string OpenaiModel { get; set; } = "gpt-4o-mini-tts";
@@ -154,6 +169,10 @@ public sealed class VoiceSettings
     public int SilenceMs { get; set; } = 1100;
     public string MicDeviceId { get; set; } = "";
     public bool Chime { get; set; } = true;
+    /// <summary>Чем слушать слово-активатор: "stt" (каждая фраза — в распознавание) | "vosk" (локально, без интернета)</summary>
+    public string WakeEngine { get; set; } = "stt";
+    /// <summary>Определение речи: "energy" (порог громкости) | "silero" (нейросеть Silero VAD)</summary>
+    public string Vad { get; set; } = "energy";
 }
 
 public sealed class HotkeySettings
@@ -172,6 +191,41 @@ public sealed class PetSettings
     public double? Y { get; set; }
     public bool IdleChatter { get; set; } = true;
     public int BubbleSeconds { get; set; } = 9;
+    /// <summary>Садиться на пол, когда скучно (простой без общения).</summary>
+    public bool SitWhenBored { get; set; } = true;
+    public int SitAfterMinutes { get; set; } = 3;
+}
+
+public sealed class SearchSettings
+{
+    /// <summary>Инструменты web_search / read_page для любой модели.</summary>
+    public bool Enabled { get; set; } = true;
+    /// <summary>"auto" | "duckduckgo" | "wikipedia" | "tavily" | "brave"</summary>
+    public string Engine { get; set; } = "auto";
+}
+
+public sealed class LocalModelSettings
+{
+    /// <summary>Путь к GGUF-файлу выбранной модели.</summary>
+    public string ModelPath { get; set; } = "";
+    /// <summary>Размер контекста в токенах.</summary>
+    public int ContextSize { get; set; } = 8192;
+    /// <summary>Слои на видеокарте: -1 — авто (все, если есть ускоритель), 0 — только процессор.</summary>
+    public int GpuLayers { get; set; } = -1;
+    /// <summary>Ускорение: "auto" | "cpu" | "vulkan" | "cuda12"</summary>
+    public string Backend { get; set; } = "auto";
+    /// <summary>Выгружать модель из памяти после N минут простоя (0 — не выгружать).</summary>
+    public int UnloadAfterMinutes { get; set; } = 10;
+    /// <summary>Если локальная модель не справилась (ошибка) — повторить у облачного провайдера.</summary>
+    public bool CloudFallback { get; set; }
+    /// <summary>Облачный провайдер для гибридного режима.</summary>
+    public string FallbackProvider { get; set; } = "openrouter";
+}
+
+public sealed class DiagnosticsSettings
+{
+    /// <summary>Журнал запросов: сырые ответы моделей пишутся в requests.log.</summary>
+    public bool LogRequests { get; set; }
 }
 
 public sealed class CapabilitySettings
@@ -205,7 +259,7 @@ public sealed class SettingsService
     {
         _file = new JsonFile<VeraSettings>(storage, "settings.json", () => new VeraSettings());
         // новые провайдеры по умолчанию, если в старом файле их нет
-        foreach (var p in new[] { "openrouter", "anthropic", "openai" })
+        foreach (var p in new[] { "openrouter", "anthropic", "openai", "custom", "local" })
             if (!_file.Data.Models.ContainsKey(p)) _file.Data.Models[p] = VeraSettings.DefaultModel(p);
     }
 

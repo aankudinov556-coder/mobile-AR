@@ -3,6 +3,9 @@ namespace Vera.Core.Sprites;
 /// <summary>Режим питомца для выбора кадра.</summary>
 public enum PetMode { Idle, Listening, Recording, Processing, Thinking, Talking, Sleeping }
 
+/// <summary>Поза тела: стоит (ПК), сидит на панели чата (Android), сидит на полу (ПК, когда скучно).</summary>
+public enum Posture { Stand, Bar, Floor }
+
 /// <summary>Слои кадра (имена PNG без расширения из assets/vera), рисовать по порядку.</summary>
 public sealed record SpriteFrame(IReadOnlyList<string> Layers)
 {
@@ -45,7 +48,7 @@ public static class VeraSprite
     public static IEnumerable<string> AllLayerNames()
     {
         string[] poses = { "idle", "wave", "giggle", "think" };
-        foreach (var p in poses) { yield return "base_" + p; yield return "sit_" + p; yield return "hand_" + p; }
+        foreach (var p in poses) { yield return "base_" + p; yield return "sit_" + p; yield return "hand_" + p; yield return "floor_" + p; }
         foreach (var e in new[] { "normal", "smug", "happy", "closed", "surprised", "angry", "side", "up" }) yield return "eyes_" + e;
         foreach (var m in new[] { "smirk", "cat", "flat", "open", "open_fang", "laugh", "o", "pout", "wobbly", "small_open" }) yield return "mouth_" + m;
         for (var i = 0; i < 3; i++) { yield return "blush_" + i; yield return "legs_sit_" + i; }
@@ -60,8 +63,14 @@ public static class VeraSprite
     /// <param name="sitting">сидячая поза на панели чата (Android)</param>
     /// <param name="legFrame">кадр болтания ногами 0..2 (только сидя)</param>
     public static SpriteFrame Compose(string emotion, PetMode mode, bool blink, bool mouthOpen,
-        bool dragging = false, bool sitting = false, int legFrame = 0)
+        bool dragging = false, bool sitting = false, int legFrame = 0) =>
+        Compose(emotion, mode, blink, mouthOpen, dragging, sitting ? Posture.Bar : Posture.Stand, legFrame);
+
+    /// <summary>Кадр с явной позой тела. Пока Веру тащат, она всегда стоит.</summary>
+    public static SpriteFrame Compose(string emotion, PetMode mode, bool blink, bool mouthOpen,
+        bool dragging, Posture posture, int legFrame = 0)
     {
+        if (dragging) posture = Posture.Stand;
         var e = Map.TryGetValue(emotion ?? "neutral", out var v) ? v : Map["neutral"];
         var eyes = e.Eyes; var mouth = e.Mouth; var blush = e.Blush; var pose = e.Pose;
 
@@ -82,12 +91,19 @@ public static class VeraSprite
         if (blink && Blinkable.Contains(eyes)) eyes = "closed";
 
         var layers = new List<string>(7);
-        if (sitting)
+        switch (posture)
         {
-            layers.Add("legs_sit_" + Math.Clamp(legFrame, 0, 2));
-            layers.Add("sit_" + pose);
+            case Posture.Bar:
+                layers.Add("legs_sit_" + Math.Clamp(legFrame, 0, 2));
+                layers.Add("sit_" + pose);
+                break;
+            case Posture.Floor:
+                layers.Add("floor_" + pose);
+                break;
+            default:
+                layers.Add("base_" + pose);
+                break;
         }
-        else layers.Add("base_" + pose);
         layers.Add("eyes_" + eyes);
         layers.Add("mouth_" + mouth);
         layers.Add("blush_" + blush);

@@ -85,6 +85,16 @@ public sealed class VoiceRecorder
     /// <summary>Пауза прослушивания (например, пока Вера говорит сама).</summary>
     public bool Paused { get; set; }
 
+    /// <summary>
+    /// Нейросетевой детектор речи (например, Silero VAD): вероятность речи 0..1 для кадра (samples, sampleRate).
+    /// Если задан — используется вместо порога громкости.
+    /// </summary>
+    public Func<float[], int, float>? SpeechProbability { get; set; }
+
+    /// <summary>Платформа закончила обрабатывать фразу (распознавание) — вернуть состояние Off/Wake.</summary>
+    public void EndProcessing() =>
+        StateChanged?.Invoke(Mode == ListenMode.Wake ? RecorderState.Wake : RecorderState.Off, null);
+
     /// <summary>Готовая фраза: WAV 16 кГц моно, режим, длительность в мс.</summary>
     public event Action<byte[], ListenMode, double>? Segment;
     /// <summary>Уровень громкости 0..1 (для индикатора).</summary>
@@ -150,12 +160,14 @@ public sealed class VoiceRecorder
         Level?.Invoke(Math.Min(1f, level / 0.15f));
         if (Paused && Mode == ListenMode.Wake) { _pre.Clear(); _rec = null; return; }
         var thr = Threshold;
+        var prob = SpeechProbability?.Invoke(samples, sampleRate);
+        var loud = prob is { } p ? p >= 0.5f : level > thr;
 
         if (_rec is null)
         {
             _pre.Add(samples);
             while (_pre.Count * dur > 450) _pre.RemoveAt(0);
-            if (level > thr)
+            if (loud)
             {
                 _loudMs += dur;
                 if (_loudMs >= 110)
@@ -182,7 +194,8 @@ public sealed class VoiceRecorder
 
         _rec.Add(samples);
         _recMs += dur;
-        if (level > thr * 0.7) _silentMs = 0; else _silentMs += dur;
+        var stillSpeaking = prob is { } p2 ? p2 >= 0.35f : level > thr * 0.7;
+        if (stillSpeaking) _silentMs = 0; else _silentMs += dur;
         var maxMs = Mode == ListenMode.Command ? 30000 : 9000;
         if (_silentMs >= _silenceMs() || _recMs >= maxMs) Finish(sampleRate);
     }

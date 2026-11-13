@@ -8,22 +8,30 @@ using OpenAI.Models;
 
 namespace Vera.Core.Providers;
 
-/// <summary>OpenAI и OpenRouter (OpenAI-совместимый API) через официальный SDK OpenAI.</summary>
+/// <summary>
+/// OpenAI, OpenRouter и «свой сервер» (любой OpenAI-совместимый: Ollama, LM Studio, vLLM…)
+/// через официальный SDK OpenAI.
+/// </summary>
 public sealed class OpenAICompatProvider : ILlmProvider
 {
     public const string OpenRouterBase = "https://openrouter.ai/api/v1";
     private readonly Func<string, string> _getKey;
     private readonly HttpClient _http;
+    private readonly Func<string>? _customBaseUrl;
 
-    public OpenAICompatProvider(string id, Func<string, string> getKey, HttpClient http)
+    public OpenAICompatProvider(string id, Func<string, string> getKey, HttpClient http, Func<string>? customBaseUrl = null)
     {
         Id = id;
         _getKey = getKey;
         _http = http;
+        _customBaseUrl = customBaseUrl;
     }
 
     public string Id { get; }
-    public string Title => Id == "openai" ? "OpenAI" : "OpenRouter";
+    public string Title => Id switch { "openai" => "OpenAI", "custom" => "Свой сервер", _ => "OpenRouter" };
+
+    /// <summary>Цены моделей OpenRouter из последнего списка (за миллион токенов).</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (double In, double Out)> KnownPrices = new();
 
     private sealed class Conv : ProviderConversation
     {
@@ -34,6 +42,13 @@ public sealed class OpenAICompatProvider : ILlmProvider
     {
         var o = new OpenAIClientOptions();
         if (Id == "openrouter") o.Endpoint = new Uri(OpenRouterBase);
+        else if (Id == "custom")
+        {
+            var url = (_customBaseUrl?.Invoke() ?? "").Trim();
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) throw new ProviderException("Свой сервер: укажи адрес, например http://localhost:11434/v1");
+            o.Endpoint = u;
+            o.NetworkTimeout = TimeSpan.FromMinutes(5); // локальные модели отвечают дольше
+        }
         else if (Environment.GetEnvironmentVariable("VERA_OPENAI_BASE_URL") is { Length: > 0 } custom) o.Endpoint = new Uri(custom);
         return o;
     }
@@ -41,7 +56,11 @@ public sealed class OpenAICompatProvider : ILlmProvider
     private ApiKeyCredential Credential()
     {
         var key = _getKey(Id);
-        if (string.IsNullOrWhiteSpace(key)) throw new ProviderException($"Не задан API-ключ {Title}. Открой настройки.");
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            if (Id == "custom") return new ApiKeyCredential("none"); // локальным серверам ключ обычно не нужен
+            throw new ProviderException($"Не задан API-ключ {Title}. Открой настройки.");
+        }
         return new ApiKeyCredential(key);
     }
 
@@ -75,7 +94,7 @@ public sealed class OpenAICompatProvider : ILlmProvider
             {
                 case "user":
                 {
-                    var text = (m.Ctx is null ? "" : $"<context>{m.Ctx}</context>\n") + (m.Text ?? "");
+                    var text = (m.Ctx is null ? "" : $"<context>{m.Ctx}</context>\n") + DocumentBlocks(m) + (m.Text ?? "");
                     if (m.Images is { Count: > 0 })
                     {
                         var parts = new List<ChatMessageContentPart> { ChatMessageContentPart.CreateTextPart(text) };
@@ -106,6 +125,19 @@ public sealed class OpenAICompatProvider : ILlmProvider
         }
         Flush();
     }
+
+    /// <summary>Документы, приложенные к сообщению, — в виде текстовых блоков перед вопросом.</summary>
+    internal static string DocumentBlocks(VeraMessage m)
+    {
+        if (m.Documents is not { Count: > 0 }) return "";
+        var sb = new StringBuilder();
+        foreach (var d in m.Documents)
+            sb.Append("<document id=\"").Append(d.Id).Append("\" name=\"").Append(d.Name).Append("\">\n").Append(d.Text).Append("\n</document>\n");
+        return sb.ToString();
+    }
+
+    public void AppendUserText(ProviderConversation conv, string text, IReadOnlyList<ImageData>? images = null) =>
+        Append(((Conv)conv).Messages, new[] { new VeraMessage { Role = "user", Text = text, Images = images?.ToList() } });
 
     public void AppendToolResults(ProviderConversation conv, IReadOnlyList<ToolExecution> results)
     {
@@ -149,6 +181,7 @@ public sealed class OpenAICompatProvider : ILlmProvider
         var text = new StringBuilder();
         var calls = new SortedDictionary<int, (string Id, string Name, StringBuilder Args)>();
         ChatFinishReason? finish = null;
+        int? inTok = null, outTok = null;
         try
         {
             await foreach (var u in client.CompleteChatStreamingAsync(messages, options, ct).WithCancellation(ct))
@@ -168,6 +201,11 @@ public sealed class OpenAICompatProvider : ILlmProvider
                     calls[tc.Index] = acc;
                 }
                 if (u.FinishReason is { } fr) finish = fr;
+                if (u.Usage is { } usage)
+                {
+                    inTok = usage.InputTokenCount;
+                    outTok = usage.OutputTokenCount;
+                }
             }
         }
         catch (ClientResultException e)
@@ -195,6 +233,9 @@ public sealed class OpenAICompatProvider : ILlmProvider
             Text = text.ToString(),
             ToolCalls = toolCalls,
             Stop = finish == ChatFinishReason.Length ? "max_tokens" : toolCalls.Count > 0 ? "tool_use" : "end",
+            InputTokens = inTok,
+            OutputTokens = outTok,
+            Raw = $"finish={finish}; tool_calls={string.Join(", ", toolCalls.Select(t => t.Name + t.Args.ToJsonString()))}; text={text}",
         };
     }
 
@@ -226,7 +267,9 @@ public sealed class OpenAICompatProvider : ILlmProvider
                 var id = m["id"]?.GetValue<string>() ?? "";
                 var supported = m["supported_parameters"]?.AsArray().Select(x => x?.GetValue<string>()).ToList() ?? new();
                 var inputs = m["architecture"]?["input_modalities"]?.AsArray().Select(x => x?.GetValue<string>()).ToList() ?? new();
-                list.Add(new ModelInfo(id, m["name"]?.GetValue<string>() ?? id, supported.Contains("tools"), inputs.Contains("image")));
+                double? pin = PerMTok(m["pricing"]?["prompt"]), pout = PerMTok(m["pricing"]?["completion"]);
+                if (pin is not null && pout is not null) KnownPrices[id] = (pin.Value, pout.Value);
+                list.Add(new ModelInfo(id, m["name"]?.GetValue<string>() ?? id, supported.Contains("tools"), inputs.Contains("image"), pin, pout));
             }
             return list.OrderBy(m => m.Id).ToList();
         }
@@ -234,6 +277,8 @@ public sealed class OpenAICompatProvider : ILlmProvider
         {
             var client = new OpenAIModelClient(Credential(), Options());
             var models = await client.GetModelsAsync(ct);
+            if (Id == "custom")
+                return models.Value.Select(m => new ModelInfo(m.Id, m.Id, true, false)).OrderBy(m => m.Id).ToList();
             string[] skip = { "audio", "realtime", "transcribe", "tts", "image", "search", "embedding", "instruct", "moderation", "dall-e", "whisper" };
             return models.Value.Select(m => m.Id)
                 .Where(id => (id.StartsWith("gpt") || id.StartsWith("chatgpt") || (id.Length > 1 && id[0] == 'o' && char.IsDigit(id[1])))
@@ -246,6 +291,17 @@ public sealed class OpenAICompatProvider : ILlmProvider
         {
             throw ProviderException.From(Title, e.Status, e.Message, e);
         }
+        catch (HttpRequestException e) when (Id == "custom")
+        {
+            throw new ProviderException($"Свой сервер не отвечает ({_customBaseUrl?.Invoke()}). Запущен ли Ollama / LM Studio?", null, e);
+        }
+    }
+
+    private static double? PerMTok(JsonNode? n)
+    {
+        var s = n?.GetValueKind() == JsonValueKind.String ? n.GetValue<string>() : n?.ToJsonString();
+        return double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 0
+            ? Math.Round(v * 1_000_000, 4) : null;
     }
 
     public async Task<string> TestAsync(CancellationToken ct = default)

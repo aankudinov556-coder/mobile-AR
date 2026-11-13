@@ -10,20 +10,49 @@ public sealed class ToolRegistry
     private readonly MemoryService _memory;
     private readonly HttpClient _http;
     private readonly IPlatformTools? _platform;
+    private readonly Func<string, string> _getKey;
+    private readonly Func<VeraSettings>? _settings;
 
-    public ToolRegistry(ReminderService reminders, MemoryService memory, HttpClient http, IPlatformTools? platform)
+    public ToolRegistry(ReminderService reminders, MemoryService memory, HttpClient http, IPlatformTools? platform,
+        Func<string, string>? getKey = null, Func<VeraSettings>? settings = null)
     {
         _reminders = reminders;
         _memory = memory;
         _http = http;
         _platform = platform;
+        _getKey = getKey ?? (_ => "");
+        _settings = settings;
     }
 
     public IReadOnlyList<ToolDefinition> GetDefinitions(VeraSettings settings)
     {
         var defs = new List<ToolDefinition>(CoreDefinitions());
+        if (settings.Search.Enabled) defs.AddRange(SearchDefinitions());
         if (_platform is not null) defs.AddRange(_platform.GetDefinitions(settings));
         return defs;
+    }
+
+    public static IEnumerable<ToolDefinition> SearchDefinitions()
+    {
+        yield return new ToolDefinition
+        {
+            Name = "web_search",
+            Description =
+                "Search the internet and get a list of results (title, url, snippet). Use it for fresh facts, news, prices, " +
+                "schedules, anything you are not sure about. Then call read_page on the most relevant urls if snippets are not enough. " +
+                "Mention sources (links) in the answer.",
+            Parameters = ToolDefinition.Schema(new JsonObject
+            {
+                ["query"] = ToolDefinition.Str("Search query. Use the user's language."),
+                ["count"] = ToolDefinition.Num("How many results, 1-8 (default 5)."),
+            }, "query"),
+        };
+        yield return new ToolDefinition
+        {
+            Name = "read_page",
+            Description = "Download a web page (or PDF) by url and return its main readable text.",
+            Parameters = ToolDefinition.Schema(new JsonObject { ["url"] = ToolDefinition.Str("http(s) url") }, "url"),
+        };
     }
 
     public static IEnumerable<ToolDefinition> CoreDefinitions()
@@ -145,6 +174,23 @@ public sealed class ToolRegistry
                 }
                 case "get_weather":
                     return await WeatherAsync(args.Str("city") ?? "", ct).ConfigureAwait(false);
+                case "web_search":
+                {
+                    var q = args.Str("query") ?? "";
+                    var count = (int)Math.Clamp(args.Num("count") ?? 5, 1, 8);
+                    var engine = _settings?.Invoke().Search.Engine ?? "auto";
+                    var (hits, used) = await WebSearch.SearchAsync(_http, q, engine, _getKey, count, ct).ConfigureAwait(false);
+                    if (hits.Count == 0) return ToolResult.Ok($"По запросу «{q}» ничего не нашлось.", $"🔎 {q}: пусто", "search");
+                    var text = string.Join("\n\n", hits.Select((h, i) => $"{i + 1}. {h.Title}\n{h.Url}\n{h.Snippet}"));
+                    return ToolResult.Ok($"Результаты поиска ({used}):\n\n{text}", $"🔎 {q}", "search");
+                }
+                case "read_page":
+                {
+                    var url = args.Str("url") ?? "";
+                    var (title, text, cut) = await WebSearch.ReadPageAsync(_http, url, 12_000, ct).ConfigureAwait(false);
+                    return ToolResult.Ok($"{title}\n{url}\n\n{text}{(cut ? "\n\n[…страница обрезана]" : "")}",
+                        "📄 " + (title.Length > 50 ? title[..50] + "…" : title), "search");
+                }
             }
 
             if (_platform is not null)

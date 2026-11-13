@@ -24,7 +24,13 @@ public sealed class VeraMessage
     public string? Label { get; set; }
     public string? TurnId { get; set; }
     public string? Emotion { get; set; }
+    /// <summary>Документы текущей сессии (на диск не сохраняются — остаются только имена).</summary>
+    [JsonIgnore] public List<DocumentText>? Documents { get; set; }
+    public List<string>? DocNames { get; set; }
 }
+
+/// <summary>Текст документа, приложенного к сообщению (PDF, DOCX, TXT…).</summary>
+public sealed record DocumentText(string Id, string Name, string Text, int Pages = 0);
 
 public sealed class ToolCall
 {
@@ -37,7 +43,8 @@ public sealed class ToolCall
 /// <summary>Результат выполнения инструмента с привязкой к вызову.</summary>
 public sealed record ToolExecution(string CallId, string Name, ToolResult Result);
 
-public sealed record ModelInfo(string Id, string Name, bool Tools, bool Vision);
+/// <summary>Модель в списке. Цена — в долларах за миллион токенов (если известна).</summary>
+public sealed record ModelInfo(string Id, string Name, bool Tools, bool Vision, double? InputPerMTok = null, double? OutputPerMTok = null);
 
 public sealed class StepRequest
 {
@@ -55,6 +62,11 @@ public sealed class StepResult
     public List<ToolCall> ToolCalls { get; init; } = new();
     /// <summary>"end" | "tool_use" | "pause" | "refusal" | "max_tokens"</summary>
     public string Stop { get; init; } = "end";
+    /// <summary>Токены запроса и ответа (если провайдер сообщил).</summary>
+    public int? InputTokens { get; init; }
+    public int? OutputTokens { get; init; }
+    /// <summary>Сырой ответ для журнала запросов (коротко).</summary>
+    public string? Raw { get; init; }
 }
 
 /// <summary>Переписка в «родном» формате провайдера, только дописывается в рамках хода.</summary>
@@ -70,6 +82,8 @@ public interface ILlmProvider
     /// <summary>Один вызов модели со стримингом текста. Ответ модели дописывается в conv.</summary>
     Task<StepResult> StepAsync(StepRequest request, ProviderConversation conv, Action<string> onText, CancellationToken ct);
     void AppendToolResults(ProviderConversation conv, IReadOnlyList<ToolExecution> results);
+    /// <summary>Дописать сообщение от имени пользователя (например, результаты инструментов, вызванных текстом).</summary>
+    void AppendUserText(ProviderConversation conv, string text, IReadOnlyList<ImageData>? images = null);
     Task<IReadOnlyList<ModelInfo>> ListModelsAsync(CancellationToken ct = default);
     Task<string> TestAsync(CancellationToken ct = default);
 }
@@ -79,9 +93,20 @@ public sealed class ProviderException : Exception
 {
     public ProviderException(string message, int? status = null, Exception? inner = null) : base(message, inner) => Status = status;
     public int? Status { get; }
+    /// <summary>Модель отвергла запрос из-за инструментов (не поддерживает function calling).</summary>
+    public bool ToolsUnsupported { get; init; }
 
     public static ProviderException From(string title, int? status, string? detail, Exception? inner = null)
     {
+        var d = (detail ?? "").ToLowerInvariant();
+        if ((status is 400 or 404 or 422 or null) && d.Contains("tool") &&
+            (d.Contains("support") || d.Contains("not allowed") || d.Contains("no endpoints")))
+        {
+            return new ProviderException(
+                $"{title}: эта модель не умеет вызывать инструменты (напоминания, команды ПК, поиск). " +
+                "Выбери модель с пометкой «инструменты» или оставь включённым «Разбор команд из текста» — тогда инструменты отключатся для этой модели.",
+                status, inner) { ToolsUnsupported = true };
+        }
         var msg = status switch
         {
             401 or 403 => $"{title}: неверный или неактивный API-ключ ({status}).",

@@ -79,6 +79,8 @@ public sealed partial class AnthropicProvider : ILlmProvider
                     var content = new JsonArray();
                     foreach (var im in m.Images ?? new()) content.Add(ImageBlock(im));
                     if (m.Ctx is not null) content.Add(TextBlock($"<context>{m.Ctx}</context>"));
+                    foreach (var d in m.Documents ?? new())
+                        content.Add(TextBlock($"<document id=\"{d.Id}\" name=\"{d.Name}\">\n{d.Text}\n</document>"));
                     content.Add(TextBlock(string.IsNullOrEmpty(m.Text) ? "…" : m.Text));
                     outList.Add(new JsonObject { ["role"] = "user", ["content"] = content });
                     break;
@@ -107,6 +109,9 @@ public sealed partial class AnthropicProvider : ILlmProvider
         FlushTools();
         return outList;
     }
+
+    public void AppendUserText(ProviderConversation conv, string text, IReadOnlyList<ImageData>? images = null) =>
+        ((Conv)conv).Messages.AddRange(ToJson(new[] { new VeraMessage { Role = "user", Text = text, Images = images?.ToList() } }));
 
     public void AppendToolResults(ProviderConversation conv, IReadOnlyList<ToolExecution> results)
     {
@@ -206,9 +211,9 @@ public sealed partial class AnthropicProvider : ILlmProvider
             c.Messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = content });
 
             if (stop == "refusal")
-                return new StepResult { Text = acc.Text.Length > 0 ? acc.Text.ToString() : "Не могу с этим помочь.", Stop = "refusal" };
+                return new StepResult { Text = acc.Text.Length > 0 ? acc.Text.ToString() : "Не могу с этим помочь.", Stop = "refusal", InputTokens = acc.InputTokens, OutputTokens = acc.OutputTokens };
             if (stop == "pause_turn")
-                return new StepResult { Text = acc.Text.ToString(), Stop = "pause" };
+                return new StepResult { Text = acc.Text.ToString(), Stop = "pause", InputTokens = acc.InputTokens, OutputTokens = acc.OutputTokens };
 
             var calls = toolUses.Select(b => new ToolCall
             {
@@ -221,6 +226,9 @@ public sealed partial class AnthropicProvider : ILlmProvider
                 Text = acc.Text.ToString(),
                 ToolCalls = calls,
                 Stop = calls.Count > 0 ? "tool_use" : stop == "max_tokens" ? "max_tokens" : "end",
+                InputTokens = acc.InputTokens,
+                OutputTokens = acc.OutputTokens,
+                Raw = $"stop={stop}; blocks={string.Join(",", acc.Blocks.Select(b => b["type"]?.GetValue<string>()))}; text={acc.Text}",
             };
         }
     }
@@ -294,6 +302,10 @@ internal sealed class StreamAccumulator
     public List<JsonObject> Blocks { get; } = new();
     public StringBuilder Text { get; } = new();
     public string? StopReason { get; private set; }
+    public int? InputTokens { get; private set; }
+    public int? OutputTokens { get; private set; }
+
+    private static int? Int(JsonNode? n) => n is JsonValue v && v.GetValueKind() == JsonValueKind.Number ? v.GetValue<int>() : null;
     public bool BrokenToolJson { get; private set; }
 
     public void OnEvent(JsonObject? ev)
@@ -301,6 +313,14 @@ internal sealed class StreamAccumulator
         if (ev is null) return;
         switch (ev["type"]?.GetValue<string>())
         {
+            case "message_start":
+            {
+                var u = ev["message"]?["usage"];
+                var input = Int(u?["input_tokens"]);
+                if (input is not null) InputTokens = input + (Int(u?["cache_creation_input_tokens"]) ?? 0) + (Int(u?["cache_read_input_tokens"]) ?? 0);
+                OutputTokens = Int(u?["output_tokens"]) ?? OutputTokens;
+                break;
+            }
             case "content_block_start":
             {
                 var idx = ev["index"]?.GetValue<int>() ?? Blocks.Count;
@@ -358,6 +378,7 @@ internal sealed class StreamAccumulator
             }
             case "message_delta":
                 StopReason = ev["delta"]?["stop_reason"]?.GetValue<string>() ?? StopReason;
+                OutputTokens = Int(ev["usage"]?["output_tokens"]) ?? OutputTokens;
                 break;
         }
     }

@@ -1,6 +1,6 @@
 namespace Vera.Core;
 
-public sealed class Reminder
+public sealed class Reminder : Sync.ISyncable
 {
     public string Id { get; set; } = "";
     public string Text { get; set; } = "";
@@ -12,6 +12,10 @@ public sealed class Reminder
     public DateTimeOffset Created { get; set; }
     public bool Done { get; set; }
     public DateTimeOffset? FiredAt { get; set; }
+    /// <summary>Синхронизация: версия (гибридные часы), устройство, локальный номер изменения.</summary>
+    public long Ver { get; set; }
+    public string? Dev { get; set; }
+    public long Seq { get; set; }
 
     public string RepeatText => ReminderService.RepeatLabel(Repeat);
     public string DueText => RuText.FormatDateTime(Due);
@@ -33,6 +37,52 @@ public sealed class ReminderService : IDisposable
     public ReminderService(IVeraStorage storage)
     {
         _file = new JsonFile<List<Reminder>>(storage, "reminders.json", () => new List<Reminder>());
+    }
+
+    /// <summary>Пометить локальное изменение для синхронизации (задаёт SyncService). Вызывается под замком.</summary>
+    public Action<Sync.ISyncable>? Stamp { get; set; }
+    /// <summary>Локальное удаление (kind, id) — для синхронизации.</summary>
+    public Action<string, string>? Deleted { get; set; }
+
+    /// <summary>Изменения с номером больше seq, кроме пришедших от устройства exceptDev.</summary>
+    internal List<Reminder> ChangedSince(long seq, string? exceptDev)
+    {
+        lock (_gate) return _file.Data.Where(r => r.Seq > seq && r.Dev != exceptDev).Select(r => r.Copy()).ToList();
+    }
+
+    /// <summary>Применить пришедшие напоминания: новее — заменяют, удалённые (по надгробию) — не воскрешают.</summary>
+    internal int ApplyRemote(IEnumerable<Reminder> items, Func<long> nextSeq, Func<string, long?> deletedVer)
+    {
+        var n = 0;
+        lock (_gate)
+        {
+            foreach (var x in items)
+            {
+                if (deletedVer(x.Id) is { } dv && dv >= x.Ver) continue;
+                var local = _file.Data.FirstOrDefault(r => r.Id == x.Id);
+                if (local is not null && !Sync.SyncClock.Newer(x.Ver, x.Dev, local.Ver, local.Dev)) continue;
+                var copy = x.Copy();
+                copy.Seq = nextSeq();
+                if (local is not null) _file.Data[_file.Data.IndexOf(local)] = copy;
+                else _file.Data.Add(copy);
+                n++;
+            }
+        }
+        if (n > 0) { _file.Save(); Changed?.Invoke(); }
+        return n;
+    }
+
+    /// <summary>Удаление с другого устройства (если наша версия не новее).</summary>
+    internal bool ApplyDelete(string id, long ver, string? dev)
+    {
+        bool removed;
+        lock (_gate)
+        {
+            var local = _file.Data.FirstOrDefault(r => r.Id == id);
+            removed = local is not null && !Sync.SyncClock.Newer(local.Ver, local.Dev, ver, dev) && _file.Data.Remove(local);
+        }
+        if (removed) { _file.Save(); Changed?.Invoke(); }
+        return removed;
     }
 
     /// <summary>Список изменился (добавление, удаление, срабатывание).</summary>
@@ -139,7 +189,7 @@ public sealed class ReminderService : IDisposable
             Source = source,
             Created = now,
         };
-        lock (_gate) _file.Data.Add(r);
+        lock (_gate) { Stamp?.Invoke(r); _file.Data.Add(r); }
         _file.Save();
         Changed?.Invoke();
         return r.Copy();
@@ -161,6 +211,7 @@ public sealed class ReminderService : IDisposable
             r = Find(idOrText);
             if (r is null) return null;
             _file.Data.Remove(r);
+            Deleted?.Invoke("reminder", r.Id);
         }
         _file.Save();
         Changed?.Invoke();
@@ -177,6 +228,7 @@ public sealed class ReminderService : IDisposable
             if (!string.IsNullOrWhiteSpace(text)) r.Text = text.Trim();
             if (repeat is not null && Repeats.Contains(repeat)) r.Repeat = repeat;
             if (due is not null) { r.Due = due.Value; r.Done = false; r.FiredAt = null; }
+            Stamp?.Invoke(r);
         }
         _file.Save();
         Changed?.Invoke();
@@ -200,6 +252,7 @@ public sealed class ReminderService : IDisposable
             r.Due = DateTimeOffset.Now.AddMinutes(minutes);
             r.Done = false;
             r.FiredAt = null;
+            Stamp?.Invoke(r);
         }
         _file.Save();
         Changed?.Invoke();
@@ -214,6 +267,7 @@ public sealed class ReminderService : IDisposable
             r = Find(id);
             if (r is null) return null;
             if (r.Repeat == "none") { r.Done = true; r.FiredAt ??= DateTimeOffset.Now; }
+            Stamp?.Invoke(r);
         }
         _file.Save();
         Changed?.Invoke();
@@ -242,6 +296,7 @@ public sealed class ReminderService : IDisposable
                 r.FiredAt = now;
                 if (r.Repeat == "none") r.Done = true;
                 else r.Due = NextDue(r.Due, r.Repeat, now) ?? now.AddYears(100);
+                Stamp?.Invoke(r);
             }
         }
         if (fired.Count == 0) return;

@@ -566,14 +566,17 @@ public sealed partial class PetWindow : Window
     /// <summary>Покадровый скин (рисунок пользователя): готовая поза по эмоции, плавное масштабирование.</summary>
     private void DrawFrameSkin(string emo, PetMode mode, bool mouthOpen, bool force)
     {
-        var pose = Skins.HaloPose(emo, mode, _posture, _dragging);
         var talking = mode == PetMode.Talking && mouthOpen;
-        var key = _skin.Id + "|" + pose.Name + (talking ? "|t" : "");
+        var pose = Skins.Pose(_skin.Id, emo, mode, _posture, _dragging, mouthOpen);
+        var folder = pose.Folder ?? _skin.Folder;
+        // у «чиби» рот открывается сменой кадра; у halo — лёгким покачиванием
+        var bob = talking && _skin.Id != "chibi";
+        var key = folder + "|" + pose.Name + (bob ? "|t" : "");
         if (!force && key == _frameKey) return;
         _frameKey = key;
-        _talkScale.ScaleY = talking ? 1.025 : 1;
-        if (!_haloFrames.TryGetValue(pose.Name, out var img))
-            _haloFrames[pose.Name] = img = SpriteSheet.LoadImage($"/{_skin.Folder}/{pose.Name}.png");
+        _talkScale.ScaleY = bob ? 1.025 : 1;
+        if (!_haloFrames.TryGetValue(folder + "/" + pose.Name, out var img))
+            _haloFrames[folder + "/" + pose.Name] = img = SpriteSheet.LoadImage($"/{folder}/{pose.Name}.png");
         if (img is null) return;
         // высота позы относительно стоящей; стоя — почти во весь рост пиксельной Веры
         var h = 70 * _scale * pose.Height;

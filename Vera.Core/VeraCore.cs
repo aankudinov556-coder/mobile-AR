@@ -29,6 +29,7 @@ public sealed class VeraCore : IDisposable
         Usage = new UsageService(storage);
         RequestLog = new RequestLog(storage);
         Agent = new VeraAgent(Settings, Providers, Tools, Memory, storage, platform) { Usage = Usage, Log = RequestLog };
+        Sync = new Sync.SyncService(storage, secrets, Settings, Secrets, Reminders, Memory, Agent, platform);
     }
 
     public string Platform { get; }
@@ -45,6 +46,8 @@ public sealed class VeraCore : IDisposable
     public UsageService Usage { get; }
     /// <summary>Журнал запросов (включается в настройках: Diagnostics.LogRequests).</summary>
     public RequestLog RequestLog { get; }
+    /// <summary>Синхронизация с другими устройствами (ПК — сервер, телефон — клиент).</summary>
+    public Sync.SyncService Sync { get; }
 
     private string UserName => string.IsNullOrWhiteSpace(Settings.Current.UserName) ? "семпай" : Settings.Current.UserName;
 
@@ -90,6 +93,7 @@ public sealed class VeraCore : IDisposable
         Memory.Flush();
         Agent.Flush();
         Usage.Flush();
+        Sync.Flush();
     }
 
     public void Dispose()

@@ -27,6 +27,9 @@ public sealed class VeraMessage
     /// <summary>Документы текущей сессии (на диск не сохраняются — остаются только имена).</summary>
     [JsonIgnore] public List<DocumentText>? Documents { get; set; }
     public List<string>? DocNames { get; set; }
+    /// <summary>Синхронизация чата: номер изменения и устройство (только у первого сообщения хода).</summary>
+    public long Seq { get; set; }
+    public string? Dev { get; set; }
 }
 
 /// <summary>Текст документа, приложенного к сообщению (PDF, DOCX, TXT…).</summary>

@@ -1,12 +1,17 @@
 namespace Vera.Core;
 
-public sealed class MemoryFact
+public sealed class MemoryFact : Sync.ISyncable
 {
     public string Id { get; set; } = "";
     public string Text { get; set; } = "";
     /// <summary>"user" | "ai"</summary>
     public string Source { get; set; } = "user";
     public DateTimeOffset Created { get; set; }
+    public long Ver { get; set; }
+    public string? Dev { get; set; }
+    public long Seq { get; set; }
+
+    public MemoryFact Copy() => (MemoryFact)MemberwiseClone();
 }
 
 /// <summary>Долгая память: факты о пользователе между сессиями.</summary>
@@ -22,6 +27,49 @@ public sealed class MemoryService
     }
 
     public event Action? Changed;
+
+    /// <summary>Пометить локальное изменение для синхронизации (задаёт SyncService).</summary>
+    public Action<Sync.ISyncable>? Stamp { get; set; }
+    public Action<string, string>? Deleted { get; set; }
+
+    internal List<MemoryFact> ChangedSince(long seq, string? exceptDev)
+    {
+        lock (_gate) return _file.Data.Where(m => m.Seq > seq && m.Dev != exceptDev).Select(m => m.Copy()).ToList();
+    }
+
+    internal int ApplyRemote(IEnumerable<MemoryFact> items, Func<long> nextSeq, Func<string, long?> deletedVer)
+    {
+        var n = 0;
+        lock (_gate)
+        {
+            foreach (var x in items)
+            {
+                if (deletedVer(x.Id) is { } dv && dv >= x.Ver) continue;
+                var local = _file.Data.FirstOrDefault(m => m.Id == x.Id);
+                if (local is not null && !Sync.SyncClock.Newer(x.Ver, x.Dev, local.Ver, local.Dev)) continue;
+                var copy = x.Copy();
+                copy.Seq = nextSeq();
+                if (local is not null) _file.Data[_file.Data.IndexOf(local)] = copy;
+                else _file.Data.Add(copy);
+                n++;
+            }
+            while (_file.Data.Count > MaxFacts) _file.Data.RemoveAt(0);
+        }
+        if (n > 0) { _file.Save(); Changed?.Invoke(); }
+        return n;
+    }
+
+    internal bool ApplyDelete(string id, long ver, string? dev)
+    {
+        bool removed;
+        lock (_gate)
+        {
+            var local = _file.Data.FirstOrDefault(m => m.Id == id);
+            removed = local is not null && !Sync.SyncClock.Newer(local.Ver, local.Dev, ver, dev) && _file.Data.Remove(local);
+        }
+        if (removed) { _file.Save(); Changed?.Invoke(); }
+        return removed;
+    }
 
     public IReadOnlyList<MemoryFact> List()
     {
@@ -39,6 +87,7 @@ public sealed class MemoryService
             var dup = _file.Data.FirstOrDefault(x => string.Equals(x.Text, text, StringComparison.OrdinalIgnoreCase));
             if (dup is not null) return dup;
             m = new MemoryFact { Id = "m_" + Guid.NewGuid().ToString("N")[..10], Text = text, Source = source, Created = DateTimeOffset.Now };
+            Stamp?.Invoke(m);
             _file.Data.Add(m);
             while (_file.Data.Count > MaxFacts) _file.Data.RemoveAt(0);
         }
@@ -55,6 +104,7 @@ public sealed class MemoryService
             m = _file.Data.FirstOrDefault(x => x.Id == id);
             if (m is null) return null;
             if (!string.IsNullOrWhiteSpace(text)) m.Text = text.Trim();
+            Stamp?.Invoke(m);
         }
         _file.Save();
         Changed?.Invoke();
@@ -71,6 +121,7 @@ public sealed class MemoryService
                 ?? (q.Length > 0 ? _file.Data.FirstOrDefault(x => x.Text.ToLowerInvariant().Contains(q)) : null);
             if (m is null) return null;
             _file.Data.Remove(m);
+            Deleted?.Invoke("memory", m.Id);
         }
         _file.Save();
         Changed?.Invoke();
@@ -79,7 +130,11 @@ public sealed class MemoryService
 
     public void Clear()
     {
-        lock (_gate) _file.Data.Clear();
+        lock (_gate)
+        {
+            foreach (var m in _file.Data) Deleted?.Invoke("memory", m.Id);
+            _file.Data.Clear();
+        }
         _file.Save();
         Changed?.Invoke();
     }

@@ -6,6 +6,8 @@
 - кладёт каждую позу в assets/skins/<skin>/<pose>.png + manifest.json.
 
 Запуск: python3 tools/skins/cut_sheet.py <sheet.png> <skin-id>
+  halo  — первый лист (пиксельный, альфа делается чёткой);
+  chibi — второй лист (стикеры с гладкими краями, мягкая альфа сохраняется).
 """
 import collections
 import json
@@ -17,7 +19,8 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # порядок поз на листе (слева направо, сверху вниз) → имя и назначение
-POSES = [
+SHEETS = {}
+SHEETS["halo"] = [
     ("think_sit", "сидит, ладонь у щеки, «?» — думает"),
     ("shrug", "стоит, разводит руками «~» — спокойно / дразнится"),
     ("laugh", "глаза >< — смеётся"),
@@ -25,6 +28,14 @@ POSES = [
     ("giggle", "ладошка у рта — хи-хи"),
     ("lie", "лежит, «...» — скучает / спит"),
 ]
+SHEETS["chibi"] = [
+    ("talk", "рот открыт, «!» — говорит / объясняет"),
+    ("laugh", "глаза >< — смеётся / радуется"),
+    ("surprised", "круглые глаза, «!!» — удивлена"),
+    ("angry", "глаза ><, «💢» и пых — злится"),
+    ("wave", "прищур, машет рукой — привет / ухмыляется"),
+]
+SOFT = {"chibi"}
 
 
 def components(img, cell=4, gap=2):
@@ -63,6 +74,18 @@ def box_dist(a, b):
     return (dx * dx + dy * dy) ** 0.5
 
 
+def soft(img):
+    """Гладкий рисунок: только убираем почти прозрачный мусор, края не трогаем."""
+    img = img.convert("RGBA")
+    px = img.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] < 12:
+                px[x, y] = (0, 0, 0, 0)
+    return img
+
+
 def clean(img):
     """Чёткая альфа + слияние почти одинаковых оттенков (шум сжатия/масштабирования)."""
     img = img.convert("RGBA")
@@ -80,6 +103,7 @@ def clean(img):
 
 
 def main(sheet_path, skin):
+    POSES = SHEETS[skin]
     sheet = Image.open(sheet_path).convert("RGBA")
     comps = components(sheet)
     comps.sort(key=lambda c: -c[0])
@@ -101,7 +125,7 @@ def main(sheet_path, skin):
         y0 = min(g[2] for g in group)
         x1 = max(g[3] for g in group)
         y1 = max(g[4] for g in group)
-        crop = clean(sheet.crop((x0, y0, x1, y1)))
+        crop = (soft if skin in SOFT else clean)(sheet.crop((x0, y0, x1, y1)))
         bbox = crop.getbbox()
         crop = crop.crop(bbox)
         # нижняя точка самой позы (без значков) — опорная линия «ноги/сиденье»
@@ -115,4 +139,4 @@ def main(sheet_path, skin):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "user")
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "halo")

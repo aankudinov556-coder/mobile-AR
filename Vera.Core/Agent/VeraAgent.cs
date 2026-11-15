@@ -224,7 +224,66 @@ public sealed class VeraAgent
         Role = m.Role, Text = note is null ? m.Text : (m.Text ?? "") + note, HadImages = m.HadImages || m.Images is { Count: > 0 }, Ctx = m.Ctx,
         Ts = m.Ts, Source = m.Source, Hidden = m.Hidden, ToolCalls = m.ToolCalls, ToolCallId = m.ToolCallId, Name = m.Name,
         IsError = m.IsError, Label = m.Label, TurnId = m.TurnId, Emotion = m.Emotion, DocNames = m.DocNames,
+        Seq = m.Seq, Dev = m.Dev,
     };
+
+    // ============================================================ синхронизация чата
+
+    /// <summary>Номер изменения и устройство для законченного хода (задаёт SyncService).</summary>
+    public Func<(long Seq, string Dev)>? SyncStamp { get; set; }
+
+    /// <summary>История изменилась извне (пришли ходы с другого устройства) — UI перечитывает чат.</summary>
+    public event Action? HistoryChanged;
+
+    private static List<List<VeraMessage>> Turns(List<VeraMessage> h)
+    {
+        var turns = new List<List<VeraMessage>>();
+        foreach (var m in h)
+        {
+            if (m.Role == "user" || turns.Count == 0) turns.Add(new List<VeraMessage>());
+            turns[^1].Add(m);
+        }
+        return turns;
+    }
+
+    /// <summary>Законченные ходы с номером больше seq (кроме пришедших от exceptDev), не больше max последних.</summary>
+    internal List<List<VeraMessage>> ExportTurns(long seq, string? exceptDev, int max = 200)
+    {
+        List<VeraMessage> h;
+        lock (_gate) h = _history.ToList();
+        return Turns(h)
+            .Where(t => t[0].Role == "user" && t[0].TurnId is not null && t[0].Seq > seq && t[0].Dev != exceptDev)
+            .TakeLast(max)
+            .Select(t => t.Select(m => Light(m)).ToList())
+            .ToList();
+    }
+
+    /// <summary>Вставить ходы с другого устройства по времени. Уже известные (по TurnId) пропускаются.</summary>
+    internal int ImportTurns(IEnumerable<List<VeraMessage>> incoming, Func<long> nextSeq)
+    {
+        var added = 0;
+        lock (_gate)
+        {
+            var turns = Turns(_history);
+            var known = turns.Where(t => t[0].TurnId is not null).Select(t => t[0].TurnId!).ToHashSet();
+            foreach (var t in incoming)
+            {
+                if (t.Count == 0 || t[0].Role != "user" || t[0].TurnId is null || !known.Add(t[0].TurnId!)) continue;
+                var copy = t.Select(m => Light(m)).ToList();
+                copy[0].Seq = nextSeq();
+                // место — по времени первого сообщения; незаконченный текущий ход остаётся последним
+                var at = turns.FindIndex(x => x[0].Ts > copy[0].Ts && x[0].Role == "user");
+                if (IsBusy && (at < 0 || at == turns.Count)) at = Math.Max(0, turns.Count - 1);
+                if (at < 0) turns.Add(copy); else turns.Insert(at, copy);
+                added++;
+            }
+            if (added > 0) _history = turns.SelectMany(x => x).ToList();
+        }
+        if (added == 0) return 0;
+        Persist();
+        try { HistoryChanged?.Invoke(); } catch { /* подписчик UI */ }
+        return added;
+    }
 
     private void Persist()
     {
@@ -294,6 +353,7 @@ public sealed class VeraAgent
         var token = _cts.Token;
         var fullText = new StringBuilder();
         string? emotion = null;
+        VeraMessage? user = null;
 
         try
         {
@@ -305,7 +365,7 @@ public sealed class VeraAgent
             var model = settings.CurrentModel;
 
             foreach (var d in docs) _docs[d.Id] = d;
-            var user = new VeraMessage
+            user = new VeraMessage
             {
                 Role = "user",
                 Text = text.Length > 0 ? text : docs.Count > 0 ? "Посмотри документ." : "Что на этом изображении?",
@@ -315,6 +375,7 @@ public sealed class VeraAgent
                 Ctx = RuText.TimeContext(DateTimeOffset.Now),
                 Source = source,
                 Hidden = hidden,
+                TurnId = turnId,
             };
             lock (_gate) _history.Add(user);
             Emit(new TurnStarted(turnId, source, user.Text!, user.Images is not null, hidden));
@@ -455,7 +516,12 @@ public sealed class VeraAgent
         }
         finally
         {
-            lock (_gate) IsBusy = false;
+            lock (_gate)
+            {
+                IsBusy = false;
+                // ход закончен — его можно отдать другим устройствам
+                if (user is not null && SyncStamp is { } stamp) { var (seq, dev) = stamp(); user.Seq = seq; user.Dev = dev; }
+            }
             _cts?.Dispose();
             _cts = null;
             Persist();

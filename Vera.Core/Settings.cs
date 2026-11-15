@@ -111,6 +111,8 @@ public sealed class VeraSettings
     public SearchSettings Search { get; set; } = new();
     public LocalModelSettings Local { get; set; } = new();
     public DiagnosticsSettings Diagnostics { get; set; } = new();
+    /// <summary>Синхронизация с телефоном.</summary>
+    public SyncSettings Sync { get; set; } = new();
     public bool Autostart { get; set; }
     /// <summary>"auto" | "dark" | "light"</summary>
     public string Theme { get; set; } = "auto";
@@ -220,6 +222,20 @@ public sealed class LocalModelSettings
     public bool CloudFallback { get; set; }
     /// <summary>Облачный провайдер для гибридного режима.</summary>
     public string FallbackProvider { get; set; } = "openrouter";
+}
+
+public sealed class SyncSettings
+{
+    /// <summary>ПК: принимать подключения телефона в домашней сети.</summary>
+    public bool Enabled { get; set; }
+    /// <summary>Синхронизировать историю чата.</summary>
+    public bool Chat { get; set; } = true;
+    /// <summary>Передавать API-ключи (заполняются только недостающие).</summary>
+    public bool Keys { get; set; }
+    /// <summary>Где звенят напоминания: "both" | "pc" | "phone" | "active" (там, где я сейчас).</summary>
+    public string RingOn { get; set; } = "both";
+    /// <summary>TCP-порт сервера синхронизации на ПК.</summary>
+    public int Port { get; set; } = 47320;
 }
 
 public sealed class DiagnosticsSettings

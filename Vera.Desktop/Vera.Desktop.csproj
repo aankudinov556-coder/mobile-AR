@@ -44,6 +44,7 @@
   <ItemGroup>
     <Resource Include="..\assets\vera\*.png" Link="assets\vera\%(Filename)%(Extension)" />
     <Resource Include="..\assets\skins\halo\*.png" Link="assets\skins\halo\%(Filename)%(Extension)" />
+    <Resource Include="..\assets\skins\chibi\*.png" Link="assets\skins\chibi\%(Filename)%(Extension)" />
     <Resource Include="..\assets\icon.png" Link="assets\icon.png" />
     <Resource Include="..\assets\tray.png" Link="assets\tray.png" />
     <Resource Include="..\build\icon.ico" Link="assets\icon.ico" />

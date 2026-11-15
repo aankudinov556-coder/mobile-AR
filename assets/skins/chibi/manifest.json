@@ -1,0 +1,51 @@
+{
+  "id": "chibi",
+  "source": "chibi_sheet.webp",
+  "poses": {
+    "talk": {
+      "file": "talk.png",
+      "size": [
+        341,
+        380
+      ],
+      "baseline": 380,
+      "about": "рот открыт, «!» — говорит / объясняет"
+    },
+    "laugh": {
+      "file": "laugh.png",
+      "size": [
+        324,
+        380
+      ],
+      "baseline": 380,
+      "about": "глаза >< — смеётся / радуется"
+    },
+    "surprised": {
+      "file": "surprised.png",
+      "size": [
+        336,
+        380
+      ],
+      "baseline": 380,
+      "about": "круглые глаза, «!!» — удивлена"
+    },
+    "angry": {
+      "file": "angry.png",
+      "size": [
+        360,
+        380
+      ],
+      "baseline": 380,
+      "about": "глаза ><, «💢» и пых — злится"
+    },
+    "wave": {
+      "file": "wave.png",
+      "size": [
+        352,
+        380
+      ],
+      "baseline": 380,
+      "about": "прищур, машет рукой — привет / ухмыляется"
+    }
+  }
+}

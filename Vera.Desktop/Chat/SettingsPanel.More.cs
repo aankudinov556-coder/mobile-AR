@@ -56,7 +56,8 @@ public sealed partial class SettingsPanel
     {
         _search = new TextBox { Tag = "🔍 Найти настройку: голос, ключ, модель…" };
         _search.TextChanged += (_, _) => ApplyFilter();
-        var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var chips = _chipRow;
+        chips.Margin = new Thickness(0, 8, 0, 0);
         foreach (var s in Sections)
         {
             var b = new Button { Content = s.Title, Style = Ui.Style("Btn.Chip"), Margin = new Thickness(0, 0, 6, 6) };
@@ -69,6 +70,48 @@ public sealed partial class SettingsPanel
         sp.Children.Add(_search);
         sp.Children.Add(chips);
         return sp;
+    }
+
+    private readonly WrapPanel _chipRow = new();
+    private readonly Dictionary<string, RadioButton> _navItems = new();
+    private Border? _sideNav;
+
+    /// <summary>Боковое меню разделов (на широком окне вместо строки «пилюль»).</summary>
+    private Border SideNav()
+    {
+        var sp = new StackPanel();
+        var title = Ui.Heading("Настройки", 21);
+        title.Margin = new Thickness(6, 0, 0, 16);
+        sp.Children.Add(title);
+        foreach (var sec in Sections)
+        {
+            var id = sec.Id;
+            var rb = new RadioButton { Content = sec.Title, GroupName = "settingsNav", Style = Ui.Style("NavItem"), Margin = new Thickness(0, 0, 0, 4) };
+            rb.Checked += (_, _) =>
+            {
+                if (_section == id) return;
+                _section = id;
+                if (_search is not null) _search.Text = "";
+                ApplyFilter();
+                if (_scroll is not null) _scroll.ScrollToTop();
+            };
+            _navItems[id] = rb;
+            sp.Children.Add(rb);
+        }
+        _sideNav = new Border { Width = 216, Padding = new Thickness(14, 18, 14, 18), BorderThickness = new Thickness(0, 0, 2, 0), Child = sp };
+        _sideNav.SetResourceReference(Border.BackgroundProperty, "Side");
+        _sideNav.SetResourceReference(Border.BorderBrushProperty, "Bg3");
+        return _sideNav;
+    }
+
+    private ScrollViewer? _scroll;
+
+    /// <summary>Широко — меню слева, узко — «пилюли» над карточками.</summary>
+    private void Relayout()
+    {
+        var wide = ActualWidth >= 720;
+        if (_sideNav is not null) _sideNav.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
+        _chipRow.Visibility = wide ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private Border Add(StackPanel root, Border card, string section)
@@ -110,6 +153,11 @@ public sealed partial class SettingsPanel
             var inSection = q.Length > 0 || _section == "all" || c.Section == _section;
             var match = q.Length == 0 || q.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w => c.Keywords.Contains(w));
             c.Card.Visibility = inSection && match ? Visibility.Visible : Visibility.Collapsed;
+        }
+        foreach (var (id, rb) in _navItems)
+        {
+            var on = id == _section && q.Length == 0;
+            if (rb.IsChecked != on) rb.IsChecked = on;
         }
         foreach (var (id, b) in _sectionButtons)
         {

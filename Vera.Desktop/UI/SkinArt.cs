@@ -15,16 +15,16 @@ public static class SkinArt
     private static readonly Dictionary<string, ImageSource?> Cache = new();
 
     /// <summary>Поза скина для эмоции (пиксельная Вера собирается из слоёв, остальные — готовые кадры).</summary>
-    public static ImageSource? Pose(string? skinId, string? emotion, PetMode mode = PetMode.Idle)
+    public static ImageSource? Pose(string? skinId, string? emotion, PetMode mode = PetMode.Idle, bool mouthOpen = false)
     {
         var skin = Skins.Get(skinId);
         var emo = string.IsNullOrEmpty(emotion) ? "neutral" : emotion;
         if (skin.Kind == SkinKind.Layered)
         {
             _sheet ??= new SpriteSheet();
-            return _sheet.Compose(VeraSprite.Compose(emo, mode, false, false, false, Posture.Stand));
+            return _sheet.Compose(VeraSprite.Compose(emo, mode, false, mouthOpen, false, Posture.Stand));
         }
-        var pose = Skins.Pose(skin.Id, emo, mode, Posture.Stand);
+        var pose = Skins.Pose(skin.Id, emo, mode, Posture.Stand, false, mouthOpen);
         var path = $"/{pose.Folder ?? skin.Folder}/{pose.Name}.png";
         if (!Cache.TryGetValue(path, out var img)) Cache[path] = img = SpriteSheet.LoadImage(path);
         return img;

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -67,41 +68,48 @@ public sealed class ChatPanel : DockPanel
         _window = window;
         LastChildFill = true;
 
-        // ------------------------------------------------------------ toolbar
-        var hint = Ui.Muted("Enter — отправить · Shift+Enter — перенос");
-        hint.VerticalAlignment = VerticalAlignment.Center;
-        hint.TextWrapping = TextWrapping.NoWrap;
-        hint.TextTrimming = TextTrimming.CharacterEllipsis;
-        var newChat = Ui.Button("Новый диалог", "Btn.GhostSmall", "edit", NewChat, "Очистить диалог");
-        var toolbar = new Border { Padding = new Thickness(12, 6, 12, 6), BorderThickness = new Thickness(0, 0, 0, 1), Child = Ui.Row(new UIElement[] { hint, newChat }, 8, 0) };
-        toolbar.SetResourceReference(Border.BorderBrushProperty, "Line");
-        SetDock(toolbar, Dock.Top);
-        Children.Add(toolbar);
+        // («Новый диалог» — на сцене окна, подсказка Enter/Shift+Enter — в поле ввода)
 
         // ------------------------------------------------------------ composer
         var shot = Ui.IconButton("camera", "Приложить скриншот экрана", AttachScreenshot);
-        var clip = new Button { Style = Ui.Style("Btn.Icon"), Width = 36, Height = 36, Content = new TextBlock { Text = "📎", FontSize = 15 }, ToolTip = "Приложить файл: PDF, DOCX, TXT, код или картинку (можно перетащить в окно)" };
+        var clip = new Button { Style = Ui.Style("Btn.Icon"), Width = 36, Height = 36, Content = Icons.Make("clip", 20), ToolTip = "Приложить файл: PDF, DOCX, TXT, код или картинку (можно перетащить в окно)" };
         clip.Click += (_, _) => PickFiles();
         _input = new TextBox
         {
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 38,
+            MinHeight = 46,
             MaxHeight = 160,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Tag = "Напиши Вере…",
-            Padding = new Thickness(10, 8, 10, 8),
+            Tag = "Напиши Вере… (Shift+Enter — новая строка)",
+            Padding = new Thickness(14, 11, 14, 11),
             VerticalContentAlignment = VerticalAlignment.Center,
+            FontSize = 15,
+            BorderThickness = new Thickness(2.5),
+            BorderBrush = Brushes.Black,
+            Effect = Anim.HardShadow(3),
+            Margin = new Thickness(0, 0, 3, 3),
         };
-        Ui.SetRadius(_input, new CornerRadius(12));
+        // бумажное поле ввода — как пузырь реплики
+        _input.SetResourceReference(Control.BackgroundProperty, "Paper");
+        _input.SetResourceReference(Control.ForegroundProperty, "VeraBubbleFg");
+        _input.SetResourceReference(TextBox.CaretBrushProperty, "VeraBubbleFg");
+        Ui.SetRadius(_input, new CornerRadius(16));
         _input.PreviewKeyDown += OnInputKey;
-        _mic = Ui.IconButton("mic", "Сказать голосом", () => _host.Voice.StartListening());
+        _mic = Ui.IconButton("mic", "Сказать голосом", () => _host.Voice.StartListening(), 46, 20);
         _send = new Button { Style = Ui.Style("Btn.Send"), Content = Icons.Make("send"), ToolTip = "Отправить" };
         _send.Click += (_, _) => Send();
+        foreach (var b in new Button[] { clip, shot, _mic })
+        {
+            b.Style = Ui.Style("Btn.Tool");
+            b.ClearValue(WidthProperty);
+            b.ClearValue(HeightProperty);
+        }
         foreach (var b in new FrameworkElement[] { clip, shot, _mic, _send }) b.VerticalAlignment = VerticalAlignment.Bottom;
-        var composerRow = Ui.Row(new UIElement[] { clip, shot, _input, _mic, _send }, 6, 2);
-        var composer = new Border { Padding = new Thickness(10, 10, 10, 12), BorderThickness = new Thickness(0, 1, 0, 0), Child = composerRow };
-        composer.SetResourceReference(Border.BorderBrushProperty, "Line");
+        _send.Margin = new Thickness(0, 0, 3, 3);
+        var composerRow = Ui.Row(new UIElement[] { clip, shot, _input, _mic, _send }, 8, 2);
+        var composer = new Border { Padding = new Thickness(16, 12, 16, 14), BorderThickness = new Thickness(0, 2, 0, 0), Child = composerRow };
+        composer.SetResourceReference(Border.BorderBrushProperty, "Bg3");
         composer.SetResourceReference(Border.BackgroundProperty, "Bg");
         SetDock(composer, Dock.Bottom);
         Children.Add(composer);
@@ -141,6 +149,7 @@ public sealed class ChatPanel : DockPanel
         _scroll = new ScrollViewer
         {
             Content = stack,
+            Padding = new Thickness(8, 0, 8, 0),
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Focusable = false,
@@ -151,6 +160,7 @@ public sealed class ChatPanel : DockPanel
             if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
                 _stick = _scroll.ScrollableHeight - _scroll.VerticalOffset < 60;
         };
+        _scroll.SetResourceReference(Control.BackgroundProperty, "Dots"); // растр, как в манге
         Children.Add(_scroll);
         // пустое состояние — по центру видимой области, как margin:auto в app.css
         stack.SetBinding(MinHeightProperty, new System.Windows.Data.Binding(nameof(ScrollViewer.ViewportHeight)) { Source = _scroll });
@@ -248,7 +258,7 @@ public sealed class ChatPanel : DockPanel
         return new ContextMenu { Items = { mi } };
     }
 
-    private void AddUser(string text, bool hasImage, string? imageB64, DateTimeOffset time, IReadOnlyList<string>? docs = null)
+    private void AddUser(string text, bool hasImage, string? imageB64, DateTimeOffset time, IReadOnlyList<string>? docs = null, bool animate = false)
     {
         var body = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(44, 0, 0, 12) };
         if (imageB64 is not null && FromBase64(imageB64, 440) is { } img)
@@ -268,15 +278,19 @@ public sealed class ChatPanel : DockPanel
             inner.Children.Add(new TextBlock { Text = "📄 " + d, FontSize = 11, Opacity = 0.9, TextTrimming = TextTrimming.CharacterEllipsis }.Res(TextBlock.ForegroundProperty, "UserBubbleFg"));
         var bubble = new Border
         {
-            CornerRadius = new CornerRadius(16, 16, 4, 16),
-            Padding = new Thickness(13, 9, 13, 10),
-            BorderThickness = new Thickness(1.5),
+            CornerRadius = new CornerRadius(20, 20, 6, 20),
+            Padding = new Thickness(15, 10, 15, 11),
+            BorderThickness = new Thickness(2.5),
+            Effect = Anim.HardShadow(3),
+            Margin = new Thickness(0, 0, 3, 3),
             Child = inner,
             HorizontalAlignment = HorizontalAlignment.Right,
             ContextMenu = CopyMenu(() => text),
         };
-        bubble.SetResourceReference(Border.BackgroundProperty, "AccentGrad");
-        bubble.SetResourceReference(Border.BorderBrushProperty, "Ink");
+        bubble.SetResourceReference(Border.BackgroundProperty, "Accent");
+        bubble.BorderBrush = Brushes.Black;
+        tb.FontSize = 15;
+        tb.FontWeight = FontWeights.Medium;
         body.Children.Add(bubble);
         var meta = Ui.Muted(TimeStr(time), 10.5);
         meta.HorizontalAlignment = HorizontalAlignment.Right;
@@ -284,22 +298,29 @@ public sealed class ChatPanel : DockPanel
         body.Children.Add(meta);
         _messages.Children.Add(body);
         UpdateEmpty();
+        if (animate) Anim.Appear(body);
     }
 
-    private VeraMessageView AddVera(DateTimeOffset time, string? emotion = null)
+    private VeraMessageView AddVera(DateTimeOffset time, string? emotion = null, bool animate = false)
     {
-        var avatar = SkinArt.Avatar(_host.Core.Settings.Current.Skin, emotion ?? "neutral", 34);
-        avatar.Margin = new Thickness(0, 2, 8, 0);
+        var avatar = SkinArt.Avatar(_host.Core.Settings.Current.Skin, emotion ?? "neutral", 40);
+        avatar.Margin = new Thickness(0, 0, 10, 22);
+        avatar.VerticalAlignment = VerticalAlignment.Bottom;
         var tools = new WrapPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 5) };
+        // реплика Веры — белый комикс-пузырь с чёрной обводкой и жёсткой тенью
         var bubble = new Border
         {
-            CornerRadius = new CornerRadius(4, 16, 16, 16),
-            BorderThickness = new Thickness(1.5, 1.5, 1.5, 3),
-            Padding = new Thickness(13, 9, 13, 10),
+            CornerRadius = new CornerRadius(20, 20, 20, 6),
+            BorderThickness = new Thickness(2.5),
+            Padding = new Thickness(15, 10, 15, 11),
             HorizontalAlignment = HorizontalAlignment.Left,
+            Effect = Anim.HardShadow(3),
+            Margin = new Thickness(0, 0, 3, 3),
         };
         bubble.SetResourceReference(Border.BackgroundProperty, "VeraBubble");
         bubble.SetResourceReference(Border.BorderBrushProperty, "VeraBubbleLine");
+        bubble.SetResourceReference(TextElement.ForegroundProperty, "VeraBubbleFg");
+        TextElement.SetFontSize(bubble, 15);
         var meta = Ui.Muted(TimeStr(time), 10.5);
         meta.Margin = new Thickness(4, 4, 0, 0);
         var body = new StackPanel();
@@ -311,6 +332,7 @@ public sealed class ChatPanel : DockPanel
         _messages.Children.Add(row);
         UpdateEmpty();
         var view = new VeraMessageView { Bubble = bubble, Tools = tools, Avatar = avatar };
+        if (animate) Anim.Appear(row, 16, 300);
         bubble.ContextMenu = CopyMenu(() => view.Text.ToString());
         return view;
     }
@@ -362,10 +384,19 @@ public sealed class ChatPanel : DockPanel
             b.SetResourceReference(Border.BackgroundProperty, "ErrSoft");
             text.SetResourceReference(TextBlock.ForegroundProperty, "Err");
         }
+        else if (c.Running)
+        {
+            b.SetResourceReference(Border.BackgroundProperty, "Bg3");
+            text.SetResourceReference(TextBlock.ForegroundProperty, "Fg");
+        }
         else
         {
-            b.SetResourceReference(Border.BackgroundProperty, "AccentSoft");
-            text.SetResourceReference(TextBlock.ForegroundProperty, "Fg");
+            // готовое действие — золотая плашка-стикер
+            b.SetResourceReference(Border.BackgroundProperty, "Accent");
+            b.BorderBrush = Brushes.Black;
+            b.BorderThickness = new Thickness(2);
+            text.SetResourceReference(TextBlock.ForegroundProperty, "OnAccent");
+            text.FontWeight = FontWeights.SemiBold;
         }
         if (c.Running) b.Opacity = 0.75;
         return b;
@@ -442,10 +473,10 @@ public sealed class ChatPanel : DockPanel
             {
                 Busy = true;
                 SetSendMode();
-                if (!ts.Hidden) AddUser(ts.UserText, ts.HasImage, _pendingPreview, DateTimeOffset.Now, _pendingDocs);
+                if (!ts.Hidden) AddUser(ts.UserText, ts.HasImage, _pendingPreview, DateTimeOffset.Now, _pendingDocs, animate: true);
                 _pendingPreview = null;
                 _pendingDocs = null;
-                var v = AddVera(DateTimeOffset.Now);
+                var v = AddVera(DateTimeOffset.Now, "think", animate: true);
                 RenderVera(v, true);
                 _live[ts.TurnId] = v;
                 ScrollDown(true);
@@ -741,7 +772,7 @@ public sealed class ChatPanel : DockPanel
         _host.Send(text, images.Count > 0 ? images : null, "chat", docs.Count > 0 ? docs : null);
     }
 
-    private void NewChat()
+    public void NewChat()
     {
         if (!ConfirmDialog.Ask(_window, "Начать новый диалог?", "Текущая переписка будет очищена (память и напоминания останутся).", okText: "Очистить"))
             return;

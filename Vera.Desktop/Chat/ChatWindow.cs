@@ -4,48 +4,54 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Shell;
 using System.Windows.Threading;
+using Vera.Core;
 using Vera.Core.Agent;
 using Vera.Core.Providers;
-using Vera.Desktop.Pet;
 using Vera.Desktop.Platform;
 using Vera.Desktop.UI;
 
 namespace Vera.Desktop.Chat;
 
-/// <summary>Главное окно: заголовок, вкладки Чат / Напоминания / Память / Настройки, всплывающие подсказки.</summary>
+/// <summary>
+/// Главное окно «Ореол»: слева панель разделов с нимбом над выбранным, сверху сцена с живой Верой,
+/// в середине раздел (чат, напоминания, память, настройки), справа «Сегодня» (на широком окне).
+/// </summary>
 public sealed class ChatWindow : Window
 {
     private readonly AppHost _host;
-    private readonly TextBlock _status;
-    private readonly Border _portrait;
     private readonly Dictionary<string, RadioButton> _tabs = new();
     private readonly Dictionary<string, FrameworkElement> _panels = new();
-    private readonly List<TextBlock> _tabLabels = new();
     private readonly Border _badge;
     private readonly TextBlock _badgeText;
     private readonly Border _toast;
     private readonly TextBlock _toastText;
     private readonly DispatcherTimer _toastTimer = new();
     private readonly Border _root;
+    private readonly StageView _stage;
+    private readonly TodayPanel _today;
+    private readonly Border _rail;
+    private readonly Grid _railGrid;
+    private readonly Ellipse _halo;
+    private readonly TranslateTransform _haloMove = new(), _haloBob = new();
+    private double _haloY = double.NaN;
     private bool _positioned;
+    private bool _typing;
     private string _current = "chat";
 
     public ChatWindow(AppHost host)
     {
         _host = host;
         Title = "Вера";
-        Width = 480;
+        Width = 1060;
         Height = 720;
-        MinWidth = 380;
-        MinHeight = 480;
+        MinWidth = 420;
+        MinHeight = 500;
         FontFamily = Ui.Font;
         FontSize = 14;
         UseLayoutRounding = true;
@@ -57,68 +63,96 @@ public sealed class ChatWindow : Window
 
         WindowChrome.SetWindowChrome(this, new WindowChrome
         {
-            CaptionHeight = 56,
-            ResizeBorderThickness = new Thickness(4),
+            CaptionHeight = 44,
+            ResizeBorderThickness = new Thickness(5),
             GlassFrameThickness = new Thickness(0),
             CornerRadius = new CornerRadius(0),
             UseAeroCaptionButtons = false,
         });
 
-        // ------------------------------------------------------------ titlebar
-        // портрет текущего скина: лицо меняется вместе с эмоцией ответа
-        _portrait = SkinArt.Avatar(host.Core.Settings.Current.Skin, "neutral", 40);
-        _portrait.VerticalAlignment = VerticalAlignment.Center;
-        _status = Ui.Text("загружаюсь…", 11.5, "Muted", wrap: false);
-        _status.TextTrimming = TextTrimming.CharacterEllipsis;
-        var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(11, 0, 0, 0) };
-        titles.Children.Add(Ui.Text("Вера", 16, "Fg", FontWeights.Black, wrap: false));
-        titles.Children.Add(_status);
-        var min = Ui.IconButton("minus", "Свернуть", () => WindowState = WindowState.Minimized, 32, 16);
-        var close = Ui.IconButton("x", "Закрыть", Hide, 32, 16);
-        min.Height = close.Height = 30;
-        WindowChrome.SetIsHitTestVisibleInChrome(min, true);
-        WindowChrome.SetIsHitTestVisibleInChrome(close, true);
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        controls.Children.Add(min);
-        controls.Children.Add(close);
-        var titleGrid = Ui.Row(new UIElement[] { _portrait, titles, controls }, 0, 1);
-        var titleBar = new Border { Height = 56, Padding = new Thickness(12, 0, 6, 0), BorderThickness = new Thickness(0, 0, 0, 1), Child = titleGrid };
-        titleBar.SetResourceReference(Border.BackgroundProperty, "Bg2");
-        titleBar.SetResourceReference(Border.BorderBrushProperty, "Line");
+        // ------------------------------------------------------------ кнопки окна (на сцене справа)
+        var newChat = Ui.IconButton("edit", "Новый диалог", () => ChatPanel?.NewChat(), 34, 16);
+        var min = Ui.IconButton("minus", "Свернуть", () => WindowState = WindowState.Minimized, 34, 16);
+        var close = Ui.IconButton("x", "Закрыть", Hide, 34, 16);
+        foreach (var b in new[] { newChat, min, close }) WindowChrome.SetIsHitTestVisibleInChrome(b, true);
+        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, Children = { newChat, min, close } };
 
-        // ------------------------------------------------------------ tabs
-        _badgeText = new TextBlock { FontSize = 10, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center };
+        _stage = new StageView(() => _host.Core.Settings.Current.Skin, windowButtons);
+
+        // ------------------------------------------------------------ панель разделов
+        _badgeText = new TextBlock { FontSize = 10.5, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center };
         _badgeText.SetResourceReference(TextBlock.ForegroundProperty, "OnAccent");
         _badge = new Border
         {
             CornerRadius = new CornerRadius(9),
-            MinWidth = 17,
-            Height = 17,
-            Padding = new Thickness(5, 1, 5, 0),
-            Margin = new Thickness(6, 0, 0, 0),
+            MinWidth = 18,
+            Height = 18,
+            Padding = new Thickness(4, 0, 4, 0),
+            BorderThickness = new Thickness(1.5),
+            BorderBrush = Brushes.Black,
             Child = _badgeText,
             Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -6, -8, 0),
+            IsHitTestVisible = false,
         };
         _badge.SetResourceReference(Border.BackgroundProperty, "Accent");
-        var tabGrid = new UniformGrid { Columns = 4, Rows = 1 };
-        foreach (var (id, text, icon) in new[] { ("chat", "Чат", "chat"), ("reminders", "Напоминания", "bell"), ("memory", "Память", "star"), ("settings", "Настройки", "gear") })
+
+        var logoText = Ui.Heading("В", 20);
+        logoText.SetResourceReference(TextBlock.ForegroundProperty, "OnAccent");
+        logoText.HorizontalAlignment = HorizontalAlignment.Center;
+        logoText.VerticalAlignment = VerticalAlignment.Center;
+        var logo = new Border
         {
-            var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            sp.Children.Add(Icons.Make(icon, 16));
-            var label = new TextBlock { Text = text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            _tabLabels.Add(label);
-            sp.Children.Add(label);
-            if (id == "reminders") sp.Children.Add(_badge);
-            var rb = new RadioButton { Content = sp, GroupName = "tabs", Style = Ui.Style("Tab"), Margin = new Thickness(2, 0, 2, 0), ToolTip = text };
+            Width = 44,
+            Height = 44,
+            CornerRadius = new CornerRadius(14),
+            BorderThickness = new Thickness(2.5),
+            BorderBrush = Brushes.Black,
+            Effect = Anim.HardShadow(3),
+            Child = logoText,
+            Margin = new Thickness(0, 14, 0, 26),
+        };
+        logo.SetResourceReference(Border.BackgroundProperty, "Accent");
+
+        var top = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        var bottom = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 14) };
+        top.Children.Add(logo);
+        foreach (var (id, text, icon) in new[]
+                 {
+                     ("chat", "Чат", "chat"), ("reminders", "Напоминания", "bell"), ("memory", "Память", "star"),
+                     ("phone", "Телефон", "phone"), ("settings", "Настройки", "gear"),
+                 })
+        {
+            var content = new Grid { Children = { Icons.Make(icon, 21) } };
+            if (id == "reminders") content.Children.Add(_badge);
+            var rb = new RadioButton { Content = content, GroupName = "rail", Style = Ui.Style("RailItem"), ToolTip = text, Margin = new Thickness(0, 0, 0, 10) };
             var tabId = id;
             rb.Checked += (_, _) => ShowTab(tabId);
             _tabs[id] = rb;
-            tabGrid.Children.Add(rb);
+            (id == "settings" ? bottom : top).Children.Add(rb);
         }
-        var tabBar = new Border { Padding = new Thickness(6, 6, 6, 6), BorderThickness = new Thickness(0, 0, 0, 1), Child = tabGrid };
-        tabBar.SetResourceReference(Border.BorderBrushProperty, "Line");
+        // нимб над выбранным разделом: переезжает между кнопками и тихо покачивается
+        _halo = new Ellipse
+        {
+            Width = 30,
+            Height = 10,
+            StrokeThickness = 3,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            RenderTransform = new TransformGroup { Children = { _haloMove, _haloBob } },
+        };
+        _halo.SetResourceReference(Shape.StrokeProperty, "Accent");
+        Anim.Bob(_haloBob, 1.6, 1.4);
+        _railGrid = new Grid { Children = { top, bottom, _halo } };
+        _rail = new Border { Width = 78, BorderThickness = new Thickness(0, 0, 2, 0), Child = _railGrid };
+        _rail.SetResourceReference(Border.BackgroundProperty, "Rail");
+        _rail.SetResourceReference(Border.BorderBrushProperty, "Bg3");
+        WindowChrome.SetIsHitTestVisibleInChrome(_railGrid, true);
 
-        // ------------------------------------------------------------ panels
+        // ------------------------------------------------------------ разделы
         ChatPanel = new ChatPanel(host, this);
         RemindersPanel = new RemindersPanel(host, this);
         MemoryPanel = new MemoryPanel(host, this);
@@ -127,52 +161,58 @@ public sealed class ChatWindow : Window
         _panels["reminders"] = RemindersPanel;
         _panels["memory"] = MemoryPanel;
         _panels["settings"] = SettingsPanel;
-        var content = new Grid();
+        var content2 = new Grid();
         foreach (var p in _panels.Values)
         {
             p.Visibility = Visibility.Collapsed;
-            content.Children.Add(p);
+            content2.Children.Add(p);
         }
 
-        // ------------------------------------------------------------ toast
-        _toastText = new TextBlock { FontSize = 13, TextWrapping = TextWrapping.Wrap };
+        _today = new TodayPanel(host);
+
+        // ------------------------------------------------------------ всплывающие подсказки
+        _toastText = new TextBlock { FontSize = 13.5, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
         _toast = new Border
         {
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14, 9, 14, 9),
-            Margin = new Thickness(16, 0, 16, 84),
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(16, 10, 16, 10),
+            Margin = new Thickness(16, 0, 16, 92),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Bottom,
-            MaxWidth = 420,
+            MaxWidth = 460,
+            BorderThickness = new Thickness(2.5),
+            BorderBrush = Brushes.Black,
+            Effect = Anim.HardShadow(3),
             Child = _toastText,
             Visibility = Visibility.Collapsed,
             IsHitTestVisible = false,
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 20, ShadowDepth = 6, Opacity = 0.35, Direction = 270 },
         };
         _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); _toast.Visibility = Visibility.Collapsed; };
 
+        var main = new Grid();
+        main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(_stage, 0);
+        Grid.SetRow(content2, 1);
+        Grid.SetRowSpan(_toast, 2);
+        main.Children.Add(_stage);
+        main.Children.Add(content2);
+        main.Children.Add(_toast);
+
         var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(titleBar, 0);
-        Grid.SetRow(tabBar, 1);
-        Grid.SetRow(content, 2);
-        Grid.SetRow(_toast, 0);
-        Grid.SetRowSpan(_toast, 3);
-        grid.Children.Add(titleBar);
-        grid.Children.Add(tabBar);
-        grid.Children.Add(content);
-        grid.Children.Add(_toast);
-        _root = new Border { BorderThickness = new Thickness(1), Child = grid };
-        _root.SetResourceReference(Border.BorderBrushProperty, "Line");
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_rail, 0);
+        Grid.SetColumn(main, 1);
+        Grid.SetColumn(_today, 2);
+        grid.Children.Add(_rail);
+        grid.Children.Add(main);
+        grid.Children.Add(_today);
+        _root = new Border { BorderThickness = new Thickness(2.5), BorderBrush = Brushes.Black, Child = grid };
         Content = _root;
 
-        SizeChanged += (_, _) =>
-        {
-            var compact = ActualWidth < 430;
-            foreach (var l in _tabLabels) l.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        };
+        SizeChanged += (_, _) => Relayout();
         StateChanged += (_, _) =>
         {
             // развёрнутое окно с WindowChrome вылезает за край экрана на толщину рамки
@@ -180,6 +220,7 @@ public sealed class ChatWindow : Window
         };
         SourceInitialized += (_, _) => Native.RoundCorners(new WindowInteropHelper(this).Handle);
         Closing += OnClosing;
+        _railGrid.LayoutUpdated += (_, _) => PlaceHalo(false);
 
         _tabs["chat"].IsChecked = true;
         ShowTab("chat");
@@ -199,24 +240,58 @@ public sealed class ChatWindow : Window
         Hide();
     }
 
+    // ================================================================== layout
+
+    /// <summary>Нимб — над выбранной кнопкой раздела.</summary>
+    private void PlaceHalo(bool animate)
+    {
+        if (!_tabs.TryGetValue(_current, out var rb) || !rb.IsLoaded) return;
+        var y = rb.TranslatePoint(new Point(0, 0), _railGrid).Y - 7;
+        if (Math.Abs(y - _haloY) < 0.5) return;
+        var first = double.IsNaN(_haloY);
+        _haloY = y;
+        if (first || !animate)
+        {
+            _haloMove.BeginAnimation(TranslateTransform.YProperty, null);
+            _haloMove.Y = y;
+        }
+        else Anim.MoveY(_haloMove, y);
+    }
+
+    /// <summary>Узкое окно — без панели «Сегодня»; низкое окно и не-чат — со свёрнутой сценой.</summary>
+    private void Relayout()
+    {
+        _today.Visibility = ActualWidth >= 920 ? Visibility.Visible : Visibility.Collapsed;
+        _stage.Slim = ActualHeight < 600 || ActualWidth < 560 || _current != "chat";
+    }
+
     public void ShowTab(string name)
     {
-        if (!_panels.ContainsKey(name)) name = "chat";
-        _current = name;
-        if (_tabs[name].IsChecked != true) _tabs[name].IsChecked = true;
-        foreach (var (id, p) in _panels) p.Visibility = id == name ? Visibility.Visible : Visibility.Collapsed;
-        switch (name)
+        var tab = name == "phone" || _panels.ContainsKey(name) ? name : "chat";
+        var panel = tab == "phone" ? "settings" : tab;
+        var before = _current == "phone" ? "settings" : _current;
+        _current = tab;
+        if (_tabs[tab].IsChecked != true) _tabs[tab].IsChecked = true;
+        foreach (var (id, p) in _panels) p.Visibility = id == panel ? Visibility.Visible : Visibility.Collapsed;
+        if (panel != before) Anim.SlideIn(_panels[panel]);
+        switch (panel)
         {
             case "chat": ChatPanel.FocusInput(); break;
             case "reminders": RemindersPanel.Refresh(); break;
             case "memory": MemoryPanel.Refresh(); break;
-            case "settings": SettingsPanel.Refresh(); break;
+            case "settings":
+                SettingsPanel.Refresh();
+                if (tab == "phone") SettingsPanel.ShowSection("sync");
+                break;
         }
+        Relayout();
+        PlaceHalo(true);
     }
 
     /// <summary>Показать окно (при первом показе — рядом с Верой) и вывести вперёд.</summary>
     public void ShowAndActivate(IntPtr petHwnd)
     {
+        var appear = !IsVisible || WindowState == WindowState.Minimized;
         if (!IsVisible)
         {
             if (!_positioned)
@@ -227,6 +302,7 @@ public sealed class ChatWindow : Window
             Show();
         }
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (appear) Anim.Pop(_root, 260, 0.96);
         Activate();
         // если Windows не дала активировать окно из фона — хотя бы поднимем его наверх
         Topmost = true;
@@ -255,10 +331,10 @@ public sealed class ChatWindow : Window
     public void Toast(string text, bool error = false)
     {
         _toastText.Text = text;
-        _toast.SetResourceReference(Border.BackgroundProperty, error ? "ToastErrBg" : "Bg4");
+        _toast.SetResourceReference(Border.BackgroundProperty, error ? "ToastErrBg" : "Bg2");
         _toastText.SetResourceReference(TextBlock.ForegroundProperty, error ? "ToastErrFg" : "Fg");
         _toast.Visibility = Visibility.Visible;
-        _toast.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
+        Anim.Appear(_toast, 18, 240);
         _toastTimer.Stop();
         _toastTimer.Interval = TimeSpan.FromMilliseconds(error ? 6000 : 2800);
         _toastTimer.Start();
@@ -266,47 +342,71 @@ public sealed class ChatWindow : Window
 
     public void SetReminderBadge(int count)
     {
+        var was = _badgeText.Text;
         _badge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         _badgeText.Text = count.ToString();
+        if (count > 0 && was != _badgeText.Text) Anim.Pop(_badge);
     }
+
+    // ================================================================== status
 
     public void UpdateStatus()
     {
         var core = _host.Core;
         var s = core.Settings.Current;
         var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
-        if (ChatPanel.Busy)
-        {
-            _status.Text = "печатает…";
-            _status.SetResourceReference(TextBlock.ForegroundProperty, "Accent");
-            return;
-        }
-        _status.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
         var model = s.Provider == "local" ? System.IO.Path.GetFileNameWithoutExtension(s.CurrentModel) : s.CurrentModel;
-        var text = core.ProviderReady ? $"{title} · {model}" : $"нет ключа {title} — открой настройки";
+        if (ChatPanel.Busy) _stage.SetStatus(_typing ? "печатает ответ…" : "думает…", true);
+        else if (!core.ProviderReady) _stage.SetStatus($"нет ключа {title}", true);
+        else _stage.SetStatus("", false);
+        var chips = new List<(string, bool)> { ($"{title} · {model}", false) };
         var phone = core.Sync.Peers.Where(p => p.LastSync is not null).OrderByDescending(p => p.LastSync).FirstOrDefault();
-        if (phone?.LastSync is { } at) text += " · 📱 " + Vera.Core.RuText.Relative(at);
-        _status.Text = text;
+        if (phone?.LastSync is { } at)
+            chips.Add(($"{phone.Name} · синхр. {RuText.Relative(at)}", DateTimeOffset.Now - at < TimeSpan.FromMinutes(30)));
+        chips.Add(("Характер: " + Personas.Get(s.Persona).Label, false));
+        _stage.SetChips(chips);
     }
 
     public void OnAgentEvent(AgentEvent e)
     {
-        var skin = _host.Core.Settings.Current.Skin;
         switch (e)
         {
-            case TurnStarted: SkinArt.SetAvatar(_portrait, skin, "think"); break;
-            case EmotionChanged em: SkinArt.SetAvatar(_portrait, skin, em.Emotion); break;
-            case TurnEnded te: SkinArt.SetAvatar(_portrait, skin, te.Emotion); break;
-            case TurnFailed tf when !tf.Aborted: SkinArt.SetAvatar(_portrait, skin, "sad"); break;
+            case TurnStarted:
+                _typing = false;
+                _stage.SetEmotion("think");
+                break;
+            case EmotionChanged em:
+                _stage.SetEmotion(em.Emotion);
+                break;
+            case TextDelta:
+                if (!_typing) { _typing = true; UpdateStatus(); }
+                _stage.SetTalking(true);
+                break;
+            case TurnEnded te:
+                _typing = false;
+                _stage.SetTalking(false);
+                _stage.SetEmotion(string.IsNullOrEmpty(te.Emotion) ? "neutral" : te.Emotion, burst: false);
+                break;
+            case TurnFailed tf:
+                _typing = false;
+                _stage.SetTalking(false);
+                if (!tf.Aborted) _stage.SetEmotion("sad");
+                break;
         }
         ChatPanel.OnAgentEvent(e);
         if (e is TurnStarted or TurnEnded or TurnFailed) UpdateStatus();
     }
 
-    /// <summary>Скин сменился: новый портрет и аватарки в чате.</summary>
+    /// <summary>Вера говорит голосом — сцена шевелит ртом.</summary>
+    public void SetSpeaking(bool speaking)
+    {
+        if (!ChatPanel.Busy) _stage.SetTalking(speaking);
+    }
+
+    /// <summary>Скин сменился: новая поза на сцене и аватарки в чате.</summary>
     public void OnSkinChanged()
     {
-        SkinArt.SetAvatar(_portrait, _host.Core.Settings.Current.Skin, "neutral");
+        _stage.OnSkinChanged();
         ChatPanel.OnSkinChanged();
     }
 

@@ -156,6 +156,7 @@ public sealed class AppHost : IToolHost
         SyncHost.Changed += () => OnUi(() => Chat.SettingsPanel.Refresh());
         SyncHost.Apply();
 
+        Voice.SpeakingChanged += on => OnUi(() => Chat.SetSpeaking(on));
         Pet.Prepare();
         if (S.Pet.Visible) Pet.Show();
 

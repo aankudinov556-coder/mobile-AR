@@ -123,7 +123,7 @@ public sealed partial class PetWindow : Window
         Topmost = S.Pet.AlwaysOnTop;
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
-        FontFamily = new FontFamily("Segoe UI, Segoe UI Emoji, Segoe UI Symbol");
+        FontFamily = Ui.Font;
         Width = 340;
         Height = 72 * 3 + BubbleSpace + 12;
 

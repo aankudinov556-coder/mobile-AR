@@ -90,7 +90,15 @@ public sealed partial class SettingsPanel : Grid
         Add(root, UsageCard(), "system");
         Add(root, SystemCard(), "system");
 
-        Children.Add(Ui.Scroll(root));
+        _scroll = Ui.Scroll(root, 18);
+        var side = SideNav();
+        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        SetColumn(side, 0);
+        SetColumn(_scroll, 1);
+        Children.Add(side);
+        Children.Add(_scroll);
+        SizeChanged += (_, _) => Relayout();
         RenderKeys();
         Refresh();
         ApplyFilter();
@@ -471,6 +479,7 @@ public sealed partial class SettingsPanel : Grid
         return Ui.Card(
             Ui.Title("💁 Характер"),
             Ui.Field("Как Вере тебя называть", name),
+            Ui.Field("Город (погода на главном экране и в сводке)", Text(s => s.City, (s, v) => s.City = v.Trim(), placeholder: "Москва", maxLength: 60)),
             Ui.Field("Характер", persona),
             Ui.Field("Дополнительные указания (системный промпт)", prompt));
     }

@@ -99,6 +99,8 @@ public sealed class ChatPanel : DockPanel
         _mic = Ui.IconButton("mic", "Сказать голосом", () => _host.Voice.StartListening(), 46, 20);
         _send = new Button { Style = Ui.Style("Btn.Send"), Content = Icons.Make("send"), ToolTip = "Отправить" };
         _send.Click += (_, _) => Send();
+        _clipBtn = clip;
+        _shotBtn = shot;
         foreach (var b in new Button[] { clip, shot, _mic })
         {
             b.Style = Ui.Style("Btn.Tool");
@@ -174,6 +176,15 @@ public sealed class ChatPanel : DockPanel
 
     public bool Busy { get; private set; }
 
+    private Button? _clipBtn, _shotBtn;
+
+    /// <summary>Узкий режим: только поле ввода, микрофон и «отправить» (файл можно перетащить в окно).</summary>
+    public void SetCompact(bool compact)
+    {
+        foreach (var b in new[] { _clipBtn, _shotBtn })
+            if (b is not null) b.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     /// <summary>Скин сменился — перерисовать аватарки и картинку пустого чата.</summary>
     public void OnSkinChanged()
     {
@@ -229,6 +240,23 @@ public sealed class ChatPanel : DockPanel
 
     private static string TimeStr(DateTimeOffset t) => t.ToLocalTime().ToString("HH:mm");
 
+    private DateTime _lastDay;
+
+    /// <summary>Разделитель дня в ленте: «Сегодня», «Вчера» или дата.</summary>
+    private void DaySeparator(DateTimeOffset time)
+    {
+        var day = time.LocalDateTime.Date;
+        if (day == _lastDay) return;
+        _lastDay = day;
+        var today = DateTime.Today;
+        var text = day == today ? "Сегодня" : day == today.AddDays(-1) ? "Вчера"
+            : day.ToString(day.Year == today.Year ? "d MMMM" : "d MMMM yyyy", new System.Globalization.CultureInfo("ru-RU"));
+        var t = Ui.Text(text, 12, "Subtle", FontWeights.SemiBold, wrap: false);
+        t.HorizontalAlignment = HorizontalAlignment.Center;
+        t.Margin = new Thickness(0, 4, 0, 14);
+        _messages.Children.Add(t);
+    }
+
     private static BitmapSource? FromBase64(string b64, int decodeWidth)
     {
         try
@@ -260,6 +288,7 @@ public sealed class ChatPanel : DockPanel
 
     private void AddUser(string text, bool hasImage, string? imageB64, DateTimeOffset time, IReadOnlyList<string>? docs = null, bool animate = false)
     {
+        DaySeparator(time);
         var body = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(44, 0, 0, 12) };
         if (imageB64 is not null && FromBase64(imageB64, 440) is { } img)
         {
@@ -303,6 +332,7 @@ public sealed class ChatPanel : DockPanel
 
     private VeraMessageView AddVera(DateTimeOffset time, string? emotion = null, bool animate = false)
     {
+        DaySeparator(time);
         var avatar = SkinArt.Avatar(_host.Core.Settings.Current.Skin, emotion ?? "neutral", 40);
         avatar.Margin = new Thickness(0, 0, 10, 22);
         avatar.VerticalAlignment = VerticalAlignment.Bottom;
@@ -436,6 +466,7 @@ public sealed class ChatPanel : DockPanel
     {
         _messages.Children.Clear();
         _live.Clear();
+        _lastDay = default;
         foreach (var m in _host.Core.Agent.GetVisibleHistory())
         {
             if (m.Role == "user") AddUser(m.Text, m.HasImage, null, m.Time, m.Documents);

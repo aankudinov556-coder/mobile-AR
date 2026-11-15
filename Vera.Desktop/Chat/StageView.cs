@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -25,6 +26,10 @@ public sealed class StageView : Border
     private readonly Border _avatar;
     private readonly TextBlock _mark;
     private readonly TextBlock _status;
+    private readonly TextBlock _subline;
+    private readonly TextBlock _name;
+    private readonly Grid _avatarHost;
+    private string _chipLine = "";
     private readonly WrapPanel _chips;
     private readonly DispatcherTimer _talk;
     private Func<string?> _skin;
@@ -64,24 +69,39 @@ public sealed class StageView : Border
         };
         var spriteHost = new Grid { Children = { _sprite, _mark }, VerticalAlignment = VerticalAlignment.Bottom };
 
-        _avatar = SkinArt.Avatar(skin(), "neutral", 44);
-        _avatar.VerticalAlignment = VerticalAlignment.Center;
-        _avatar.Margin = new Thickness(14, 0, 4, 0);
-        _avatar.Visibility = Visibility.Collapsed;
+        _avatar = SkinArt.Avatar(skin(), "neutral", 46);
+        // нимб над аватаркой в узком режиме
+        var halo = new System.Windows.Shapes.Ellipse
+        {
+            Width = 28, Height = 9, StrokeThickness = 2.5, IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -6, 0, 0), RenderTransform = new TranslateTransform(),
+        };
+        halo.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Accent");
+        Anim.Bob((TranslateTransform)halo.RenderTransform, 1.4, 1.5);
+        _avatarHost = new Grid
+        {
+            Children = { _avatar, halo },
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(14, 4, 4, 0),
+            Visibility = Visibility.Collapsed,
+        };
 
-        var name = Ui.Heading("Вера", 30);
+        var name = _name = Ui.Heading("Вера", 30);
         _status = Ui.Text("", 13.5, "Muted", FontWeights.SemiBold, wrap: false);
         _status.Margin = new Thickness(12, 0, 0, 4);
         _status.VerticalAlignment = VerticalAlignment.Bottom;
         var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Children = { name, _status } };
         _chips = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(10, 0, 0, 22), Children = { nameRow, _chips } };
+        _subline = Ui.Text("", 12, "Muted", wrap: false);
+        _subline.Visibility = Visibility.Collapsed;
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(10, 0, 0, 22), Children = { nameRow, _subline, _chips } };
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(_avatar, 0);
+        Grid.SetColumn(_avatarHost, 0);
         Grid.SetColumn(spriteHost, 0);
         Grid.SetColumn(text, 1);
         Grid.SetColumnSpan(text, 2);
@@ -94,7 +114,7 @@ public sealed class StageView : Border
             Grid.SetColumn(buttons, 2);
             grid.Children.Add(buttons);
         }
-        grid.Children.Add(_avatar);
+        grid.Children.Add(_avatarHost);
         grid.Children.Add(spriteHost);
         grid.Children.Add(text);
         Child = grid;
@@ -113,12 +133,24 @@ public sealed class StageView : Border
     {
         _status.Text = text;
         _status.SetResourceReference(TextBlock.ForegroundProperty, accent ? "AccentText" : "Muted");
+        UpdateSubline();
+    }
+
+    /// <summary>Узкий режим: под именем одна строка — статус или модель и телефон.</summary>
+    private void UpdateSubline()
+    {
+        var busy = _status.Text.Length > 0;
+        _subline.Text = busy ? _status.Text : _chipLine;
+        _subline.SetResourceReference(TextBlock.ForegroundProperty, busy ? "AccentText" : "Muted");
+        _status.Visibility = _slim ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>Плашки под именем: (текст, есть ли зелёная точка «онлайн»).</summary>
     public void SetChips(IEnumerable<(string Text, bool Online)> chips)
     {
         _chips.Children.Clear();
+        _chipLine = string.Join(" · ", chips.Select(c => c.Text).Take(2));
+        UpdateSubline();
         foreach (var (t, online) in chips)
         {
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
@@ -147,9 +179,16 @@ public sealed class StageView : Border
             if (Anim.Reduced) Height = h;
             else BeginAnimation(HeightProperty, new DoubleAnimation(h, TimeSpan.FromMilliseconds(260)) { EasingFunction = Anim.Out });
             _sprite.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
-            _avatar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            _avatarHost.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
             _chips.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
-            if (Child is Grid g && g.Children[^1] is StackPanel text) text.Margin = value ? new Thickness(10, 0, 0, 12) : new Thickness(10, 0, 0, 22);
+            _subline.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            _name.FontSize = value ? 19 : 30;
+            UpdateSubline();
+            if (Child is Grid g && g.Children[^1] is StackPanel text)
+            {
+                text.Margin = value ? new Thickness(10, 0, 0, 0) : new Thickness(10, 0, 0, 22);
+                text.VerticalAlignment = value ? VerticalAlignment.Center : VerticalAlignment.Bottom;
+            }
         }
     }
 

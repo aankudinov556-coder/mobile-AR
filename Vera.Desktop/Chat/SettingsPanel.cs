@@ -59,8 +59,8 @@ public sealed partial class SettingsPanel : Grid
         welcomeText.Inlines.Add(new Run("Через облако") { FontWeight = FontWeights.Bold });
         welcomeText.Inlines.Add(new Run(" — вставь ключ ниже: например, OpenRouter (один ключ — сотни моделей). " +
                                         "Для живого голоса и распознавания — ключ OpenAI или Groq. Или просто нажми готовый набор ниже."));
-        var goLocal = Ui.Button("Скачать модель для ПК", "Btn.Primary", null, () => ShowSection("local"));
-        var goKeys = Ui.Button("У меня есть ключ", "Btn.Ghost", null, () => ShowSection("main"));
+        var goLocal = Ui.Button("Скачать модель для ПК", "Btn.Primary", null, () => ShowSection("brain"));
+        var goKeys = Ui.Button("У меня есть ключ", "Btn.Ghost", null, () => ShowSection("keys"));
         goLocal.Margin = new Thickness(0, 0, 8, 0);
         var welcomeButtons = new WrapPanel { Margin = new Thickness(0, 10, 0, 0), Children = { goLocal, goKeys } };
         _welcome = Ui.Card(Ui.Title("Добро пожаловать! 👋"), welcomeText, welcomeButtons);
@@ -69,39 +69,45 @@ public sealed partial class SettingsPanel : Grid
         root.Children.Add(NavBar());
         root.Children.Add(_welcome);
 
-        Add(root, PresetsCard(), "main");
-        Add(root, ModelCard(), "main");
-        Add(root, KeysCard(), "main");
-        Add(root, SearchCard(), "main");
-        Add(root, LocalCard(), "local");
+        // разделы как в концепте «Ореол»
+        Add(root, ModelCard(), "brain");
+        Add(root, LocalCard(), "brain");
+        Add(root, PresetsCard(), "brain");
+        Add(root, SearchCard(), "brain");
         Add(root, VoiceCard(), "voice");
         Add(root, SttCard(), "voice");
 
         _hotkeyErrors = Ui.Text("", 12, "Err");
         _hotkeyErrorsBox = Ui.Note("", error: true);
         _hotkeyErrorsBox.Child = _hotkeyErrors;
-        Add(root, PersonaCard(), "vera");
-        Add(root, PetCard(), "vera");
-        Add(root, RemindersCard(), "vera");
-        Add(root, HotkeysCard(), "pc");
-        Add(root, CapabilitiesCard(), "pc");
-        Add(root, AppsCard(), "pc");
+        Add(root, PersonaCard(), "look");
+        Add(root, PetCard(), "look");
         Add(root, SyncCard(), "sync");
+        Add(root, CapabilitiesCard(), "caps");
+        Add(root, RemindersCard(), "caps");
+        Add(root, AppsCard(), "caps");
+        Add(root, KeysCard(), "keys");
+        Add(root, HotkeysCard(), "system");
         Add(root, UsageCard(), "system");
         Add(root, SystemCard(), "system");
 
-        _scroll = Ui.Scroll(root, 18);
+        _scroll = Ui.Scroll(root, 24);
         var side = SideNav();
+        var aside = Aside();
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         SetColumn(side, 0);
         SetColumn(_scroll, 1);
+        SetColumn(aside, 2);
         Children.Add(side);
         Children.Add(_scroll);
+        Children.Add(aside);
         SizeChanged += (_, _) => Relayout();
+        Loaded += (_, _) => Relayout();
         RenderKeys();
         Refresh();
-        ApplyFilter();
+        ShowSection(_section);
     }
 
     private VeraCore Core => _host.Core;
@@ -112,7 +118,11 @@ public sealed partial class SettingsPanel : Grid
     private void Save(Action<VeraSettings> change)
     {
         if (_loading) return;
-        try { Core.Settings.Update(change); }
+        try
+        {
+            Core.Settings.Update(change);
+            ReactSaved();
+        }
         catch (Exception e) { _window.Toast(e.Message, true); }
     }
 
@@ -215,12 +225,82 @@ public sealed partial class SettingsPanel : Grid
 
     private Border ModelCard()
     {
-        // провайдер — сегментированный переключатель
+        // «Мозг Веры»: три большие карточки — облако, на этом ПК, свой сервер
+        var cloudIds = new[] { "openrouter", "anthropic", "openai" };
+        var brains = new UniformGrid { Columns = 3, Margin = new Thickness(0, 4, 0, 6) };
+        foreach (var (kind, title, about) in new[]
+                 {
+                     ("cloud", "Облако", "OpenRouter, Anthropic или OpenAI. Умнее всего, нужен ключ."),
+                     ("local", "На этом ПК", "Бесплатно и без интернета. Переписка не уходит с компьютера."),
+                     ("custom", "Свой сервер", "Ollama, LM Studio — любая модель с OpenAI-совместимым адресом."),
+                 })
+        {
+            var head = Ui.Heading(title, 15.5, FontWeights.Bold);
+            var text = Ui.Text(about, 12.5, "Muted");
+            text.Margin = new Thickness(0, 6, 0, 0);
+            // нимб над выбранной карточкой
+            var halo = new System.Windows.Shapes.Ellipse
+            {
+                Width = 34, Height = 11, StrokeThickness = 3, Stroke = Brushes.Black,
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, -21, 8, 0), Visibility = Visibility.Collapsed, IsHitTestVisible = false,
+            };
+            var body = new Grid { Children = { new StackPanel { Children = { head, text } }, halo } };
+            var rb = new RadioButton
+            {
+                Content = body,
+                GroupName = "brain",
+                Style = Ui.Style("Btn.Base"),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Top,
+                Padding = new Thickness(16, 14, 16, 16),
+                BorderThickness = new Thickness(2),
+                Margin = new Thickness(0, 6, 12, 8),
+                MinHeight = 118,
+            };
+            Ui.SetRadius(rb, new CornerRadius(18));
+            var k = kind;
+            void Paint()
+            {
+                var on = rb.IsChecked == true;
+                rb.SetResourceReference(Control.BackgroundProperty, on ? "Accent" : "Bg2");
+                if (on) rb.BorderBrush = Brushes.Black; else rb.SetResourceReference(Control.BorderBrushProperty, "Line");
+                rb.Effect = on ? Anim.HardShadow(4) : null;
+                head.SetResourceReference(TextBlock.ForegroundProperty, on ? "OnAccent" : "Fg");
+                text.SetResourceReference(TextBlock.ForegroundProperty, on ? "OnAccent" : "Muted");
+                halo.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+                if (on) Anim.Pop(halo, 300, 0.4);
+            }
+            rb.Checked += (_, _) =>
+            {
+                Paint();
+                if (_loading) return;
+                var target = k switch
+                {
+                    "local" => "local",
+                    "custom" => "custom",
+                    _ => cloudIds.Contains(S.Provider) ? S.Provider : cloudIds.FirstOrDefault(Core.Secrets.Has) ?? "openrouter",
+                };
+                if (target == S.Provider) return;
+                _model.Items.Clear();
+                Save(st => st.Provider = target);
+            };
+            rb.Unchecked += (_, _) => Paint();
+            _refreshers.Add(() =>
+            {
+                var cur = S.Provider == "local" ? "local" : S.Provider == "custom" ? "custom" : "cloud";
+                if ((cur == k) != (rb.IsChecked == true)) rb.IsChecked = cur == k;
+                Paint();
+            });
+            brains.Children.Add(rb);
+        }
+
+        // облачный провайдер — переключатель под карточками
         var seg = new UniformGrid { Columns = 3 };
-        foreach (var (id, title, _) in ProviderRegistry.Known)
+        foreach (var (id, title, _) in ProviderRegistry.Known.Where(x => cloudIds.Contains(x.Id)))
         {
             var rb = Ui.Radio(title, "provider", "Segment");
-            rb.Margin = new Thickness(1.5, 1.5, 1.5, 1.5);
+            rb.Margin = new Thickness(0, 0, 8, 0);
             var pid = id;
             rb.Checked += (_, _) =>
             {
@@ -231,9 +311,9 @@ public sealed partial class SettingsPanel : Grid
             _providerButtons[id] = rb;
             seg.Children.Add(rb);
         }
-        var segBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Padding = new Thickness(3), Child = seg };
-        segBox.SetResourceReference(Border.BackgroundProperty, "Bg3");
-        segBox.SetResourceReference(Border.BorderBrushProperty, "Line");
+        var segBox = seg;
+        var cloudField = Ui.Field("Сервис", segBox);
+        ShowIf(cloudField, st => cloudIds.Contains(st.Provider));
         _refreshers.Add(() =>
         {
             if (_providerButtons.TryGetValue(S.Provider, out var b) && b.IsChecked != true) b.IsChecked = true;
@@ -266,10 +346,9 @@ public sealed partial class SettingsPanel : Grid
         ShowIf(customSub, s => s.Provider == "custom");
         var localSub = Ui.Sub(
             Ui.Muted("Модель работает прямо на этом ПК. Скачать или выбрать модель — в разделе «Локальный ИИ»."),
-            Ui.LinkButton("Открыть «Локальный ИИ» →", () => ShowSection("local")));
+            Ui.Muted("Модели на этом ПК — карточка ниже."));
         ShowIf(localSub, s => s.Provider == "local");
         modelBox.Children.Add(customSub);
-        modelBox.Children.Add(localSub);
 
         var effort = Combo(new[]
         {
@@ -285,14 +364,19 @@ public sealed partial class SettingsPanel : Grid
         history.Width = 110;
         history.HorizontalAlignment = HorizontalAlignment.Left;
 
-        return Ui.Card(
-            Ui.Title("🧠 Модель"),
-            Ui.Field("Провайдер", segBox),
-            Ui.Field("Модель", modelBox),
+        var modelField = Ui.Field("Модель", modelBox);
+        ShowIf(modelField, st => st.Provider != "local");
+        var inner = Ui.Card(
+            cloudField,
+            modelField,
+            localSub,
             Ui.Field("Глубина размышлений", effort),
             Toggle("Разбор команд из текста", s => s.ToolCallFallback, (s, v) => s.ToolCallFallback = v,
                 "(если модель пишет команду JSON-ом — выполнить её; для моделей без инструментов)"),
             Ui.Field("Сообщений истории в контексте", history));
+        // карточки «мозга» — над настройками модели, без общей рамки
+        var card = new Border { Child = new StackPanel { Children = { brains, inner } } };
+        return card;
     }
 
     private static string Price(ModelInfo m)

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -40,6 +41,11 @@ public sealed class ChatWindow : Window
     private readonly Ellipse _halo;
     private readonly TranslateTransform _haloMove = new(), _haloBob = new();
     private double _haloY = double.NaN;
+    private readonly Button _sizeBtn;
+    private readonly UniformGrid _topTabs;
+    private readonly Dictionary<string, RadioButton> _topTabButtons = new();
+    private bool _compact;
+    private double _wideWidth = 1060;
     private bool _positioned;
     private bool _typing;
     private string _current = "chat";
@@ -72,10 +78,11 @@ public sealed class ChatWindow : Window
 
         // ------------------------------------------------------------ кнопки окна (на сцене справа)
         var newChat = Ui.IconButton("edit", "Новый диалог", () => ChatPanel?.NewChat(), 34, 16);
+        _sizeBtn = Ui.IconButton("shrink", "Узкий режим — рядом с Верой", ToggleCompact, 34, 16);
         var min = Ui.IconButton("minus", "Свернуть", () => WindowState = WindowState.Minimized, 34, 16);
         var close = Ui.IconButton("x", "Закрыть", Hide, 34, 16);
-        foreach (var b in new[] { newChat, min, close }) WindowChrome.SetIsHitTestVisibleInChrome(b, true);
-        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, Children = { newChat, min, close } };
+        foreach (var b in new[] { newChat, _sizeBtn, min, close }) WindowChrome.SetIsHitTestVisibleInChrome(b, true);
+        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, Children = { newChat, _sizeBtn, min, close } };
 
         _stage = new StageView(() => _host.Core.Settings.Current.Skin, windowButtons);
 
@@ -170,6 +177,19 @@ public sealed class ChatWindow : Window
 
         _today = new TodayPanel(host);
 
+        // ------------------------------------------------------------ вкладки сверху (узкий режим)
+        _topTabs = new UniformGrid { Rows = 1, Margin = new Thickness(12, 10, 12, 10), Visibility = Visibility.Collapsed };
+        foreach (var (id, text) in new[] { ("chat", "Чат"), ("reminders", "Дела"), ("memory", "Память"), ("settings", "Настройки") })
+        {
+            var rb = new RadioButton { Content = text, GroupName = "topTabs", Style = Ui.Style("Segment"), Margin = new Thickness(0, 0, 6, 0) };
+            var tabId = id;
+            rb.Checked += (_, _) => { if (_current != tabId) ShowTab(tabId); };
+            _topTabButtons[id] = rb;
+            _topTabs.Children.Add(rb);
+        }
+        var topTabsHost = new Border { Child = _topTabs, BorderThickness = new Thickness(0, 0, 0, 2) };
+        topTabsHost.SetResourceReference(Border.BorderBrushProperty, "Bg3");
+
         // ------------------------------------------------------------ всплывающие подсказки
         _toastText = new TextBlock { FontSize = 13.5, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
         _toast = new Border
@@ -191,11 +211,14 @@ public sealed class ChatWindow : Window
 
         var main = new Grid();
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(_stage, 0);
-        Grid.SetRow(content2, 1);
-        Grid.SetRowSpan(_toast, 2);
+        Grid.SetRow(topTabsHost, 1);
+        Grid.SetRow(content2, 2);
+        Grid.SetRowSpan(_toast, 3);
         main.Children.Add(_stage);
+        main.Children.Add(topTabsHost);
         main.Children.Add(content2);
         main.Children.Add(_toast);
 
@@ -261,8 +284,39 @@ public sealed class ChatWindow : Window
     /// <summary>Узкое окно — без панели «Сегодня»; низкое окно и не-чат — со свёрнутой сценой.</summary>
     private void Relayout()
     {
-        _today.Visibility = ActualWidth >= 920 ? Visibility.Visible : Visibility.Collapsed;
-        _stage.Slim = ActualHeight < 600 || ActualWidth < 560 || _current != "chat";
+        // узкий режим (рядом с Верой): без боковой панели, вкладки сверху, сцена — строкой
+        var compact = ActualWidth < 640;
+        if (compact != _compact)
+        {
+            _compact = compact;
+            _rail.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+            _topTabs.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+            ChatPanel.SetCompact(compact);
+            _sizeBtn.Content = Icons.Make(compact ? "expand" : "shrink", 16);
+            _sizeBtn.ToolTip = compact ? "Развернуть окно" : "Узкий режим — рядом с Верой";
+            if (compact) Anim.Appear(_topTabs, 8, 200);
+        }
+        var side = _current is "chat" or "reminders" or "memory";
+        _today.Visibility = ActualWidth >= 920 && side ? Visibility.Visible : Visibility.Collapsed;
+        _stage.Slim = compact || ActualHeight < 600 || _current != "chat";
+    }
+
+    /// <summary>Переключить узкий (440 px рядом с Верой) и широкий режим окна.</summary>
+    private void ToggleCompact()
+    {
+        if (WindowState == WindowState.Maximized) WindowState = WindowState.Normal;
+        var right = Left + ActualWidth;
+        if (_compact)
+        {
+            Width = Math.Max(_wideWidth, 900);
+            Left = Math.Max(SystemParameters.WorkArea.Left, right - Width);
+        }
+        else
+        {
+            _wideWidth = ActualWidth;
+            Width = 440;
+            Left = right - Width; // правый край остаётся на месте — ближе к Вере
+        }
     }
 
     public void ShowTab(string name)
@@ -272,6 +326,8 @@ public sealed class ChatWindow : Window
         var before = _current == "phone" ? "settings" : _current;
         _current = tab;
         if (_tabs[tab].IsChecked != true) _tabs[tab].IsChecked = true;
+        var top = tab == "phone" ? "settings" : tab;
+        if (_topTabButtons.TryGetValue(top, out var tb) && tb.IsChecked != true) tb.IsChecked = true;
         foreach (var (id, p) in _panels) p.Visibility = id == panel ? Visibility.Visible : Visibility.Collapsed;
         if (panel != before) Anim.SlideIn(_panels[panel]);
         switch (panel)
@@ -346,6 +402,7 @@ public sealed class ChatWindow : Window
         _badge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         _badgeText.Text = count.ToString();
         if (count > 0 && was != _badgeText.Text) Anim.Pop(_badge);
+        if (_topTabButtons.TryGetValue("reminders", out var rb)) rb.Content = count > 0 ? $"Дела · {count}" : "Дела";
     }
 
     // ================================================================== status

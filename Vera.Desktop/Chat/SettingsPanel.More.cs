@@ -24,26 +24,45 @@ namespace Vera.Desktop.Chat;
 /// </summary>
 public sealed partial class SettingsPanel
 {
-    private sealed record Section(string Id, string Title);
+    private sealed record Section(string Id, string Title, string About, string Emotion, string Comment);
 
+    /// <summary>Разделы как в концепте «Ореол». Comment — что Вера говорит, когда открываешь раздел.</summary>
     private static readonly Section[] Sections =
     {
-        new("all", "Все"),
-        new("main", "Модель и ключи"),
-        new("local", "Локальный ИИ"),
-        new("voice", "Голос"),
-        new("vera", "Вера"),
-        new("pc", "ПК"),
-        new("sync", "Телефон"),
-        new("system", "Система"),
+        new("brain", "Мозг Веры", "Где Вера думает. Можно поменять в любой момент — память и напоминания останутся.", "think",
+            "Моя голова — мои правила. Выбирай с умом: облако умнее, своя модель — бесплатно и без свидетелей~"),
+        new("voice", "Голос и слух", "Как Вера говорит и слышит: синтез речи, распознавание, слово «Вера».", "smug",
+            "Хочешь слышать меня чаще? Понимаю. Только громкость не выкручивай — я и так убедительна."),
+        new("look", "Характер и вид", "Как Вера к тебе обращается, её характер, скин и поведение на рабочем столе.", "happy",
+            "Характер менять можно. Но лучше меня ты всё равно не найдёшь~"),
+        new("sync", "Телефон", "Одна Вера на ПК и телефоне: память, напоминания, чат и характер синхронизируются.", "surprised",
+            "Телефон? Отлично, буду следить за тобой и там. Шучу. Наполовину."),
+        new("caps", "Что ей можно", "Что Вера может делать на компьютере: программы, сайты, экран, команды, напоминания.", "smug",
+            "Чем больше прав, тем быстрее работаю. Командам PowerShell, так и быть, спрошу подтверждение."),
+        new("keys", "Ключи API", "Ключи облачных сервисов. Хранятся только на этом ПК в зашифрованном виде.", "neutral",
+            "Ключи — это мой пропуск. Без пропуска даже лучший сотрудник сидит на ресепшене."),
+        new("system", "Система", "Горячие клавиши, расход, тема, автозапуск, перенос настроек.", "neutral",
+            "Системные настройки. Трогай аккуратно, я всё фиксирую."),
+    };
+
+    /// <summary>Старые имена разделов → новые (ссылки из других мест программы).</summary>
+    private static string MapSection(string id) => id switch
+    {
+        "main" or "local" or "all" => "brain",
+        "vera" => "look",
+        "pc" => "caps",
+        _ => Sections.Any(x => x.Id == id) ? id : "brain",
     };
 
     private sealed record CardEntry(Border Card, string Section, string Keywords);
 
     private readonly List<CardEntry> _cards = new();
     private readonly Dictionary<string, Button> _sectionButtons = new();
-    private string _section = "all";
+    private string _section = "brain";
     private TextBox _search = null!;
+    private readonly StackPanel _searchHostWide = new();
+    private readonly StackPanel _searchHostNarrow = new();
+    private TextBlock _sectionTitle = null!, _sectionAbout = null!;
 
     /// <summary>Идущие загрузки моделей (живут дольше, чем перерисовка настроек).</summary>
     private static readonly Dictionary<string, (CancellationTokenSource Cts, DownloadProgress? Last)> Downloads = new();
@@ -52,66 +71,133 @@ public sealed partial class SettingsPanel
 
     // ================================================================== navigation + search
 
+    /// <summary>Шапка раздела (заголовок + пояснение) и, на узком окне, поиск и «пилюли» разделов.</summary>
     private UIElement NavBar()
     {
-        _search = new TextBox { Tag = "🔍 Найти настройку: голос, ключ, модель…" };
+        _search = new TextBox { Tag = "Найти: голос, ключ, модель…" };
         _search.TextChanged += (_, _) => ApplyFilter();
         var chips = _chipRow;
         chips.Margin = new Thickness(0, 8, 0, 0);
-        foreach (var s in Sections)
+        foreach (var sec in Sections)
         {
-            var b = new Button { Content = s.Title, Style = Ui.Style("Btn.Chip"), Margin = new Thickness(0, 0, 6, 6) };
-            var id = s.Id;
-            b.Click += (_, _) => { _section = id; ApplyFilter(); };
+            var b = new Button { Content = sec.Title, Style = Ui.Style("Btn.Chip"), Margin = new Thickness(0, 0, 6, 6) };
+            var id = sec.Id;
+            b.Click += (_, _) => ShowSection(id);
             _sectionButtons[id] = b;
             chips.Children.Add(b);
         }
-        var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 6) };
-        sp.Children.Add(_search);
+        _sectionTitle = Ui.Heading("", 21, FontWeights.Bold);
+        _sectionAbout = Ui.Muted("", 13.5);
+        _sectionAbout.Margin = new Thickness(0, 4, 0, 0);
+        var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
+        sp.Children.Add(_searchHostNarrow);
         sp.Children.Add(chips);
+        sp.Children.Add(_sectionTitle);
+        sp.Children.Add(_sectionAbout);
         return sp;
     }
 
     private readonly WrapPanel _chipRow = new();
     private readonly Dictionary<string, RadioButton> _navItems = new();
     private Border? _sideNav;
+    private Border? _aside;
+    private TextBlock _asideText = null!;
+    private Image _asideArt = null!;
 
-    /// <summary>Боковое меню разделов (на широком окне вместо строки «пилюль»).</summary>
+    /// <summary>Боковое меню: заголовок, поиск, разделы (выбранный — золотой стикер).</summary>
     private Border SideNav()
     {
         var sp = new StackPanel();
-        var title = Ui.Heading("Настройки", 21);
-        title.Margin = new Thickness(6, 0, 0, 16);
+        var title = Ui.Heading("Настройки", 22);
+        title.Margin = new Thickness(6, 0, 0, 14);
         sp.Children.Add(title);
+        _searchHostWide.Margin = new Thickness(0, 0, 0, 12);
+        sp.Children.Add(_searchHostWide);
         foreach (var sec in Sections)
         {
             var id = sec.Id;
             var rb = new RadioButton { Content = sec.Title, GroupName = "settingsNav", Style = Ui.Style("NavItem"), Margin = new Thickness(0, 0, 0, 4) };
-            rb.Checked += (_, _) =>
-            {
-                if (_section == id) return;
-                _section = id;
-                if (_search is not null) _search.Text = "";
-                ApplyFilter();
-                if (_scroll is not null) _scroll.ScrollToTop();
-            };
+            rb.Checked += (_, _) => { if (_section != id) ShowSection(id); };
             _navItems[id] = rb;
             sp.Children.Add(rb);
         }
-        _sideNav = new Border { Width = 216, Padding = new Thickness(14, 18, 14, 18), BorderThickness = new Thickness(0, 0, 2, 0), Child = sp };
+        _sideNav = new Border { Width = 236, Padding = new Thickness(14, 20, 14, 18), BorderThickness = new Thickness(0, 0, 2, 0), Child = sp };
         _sideNav.SetResourceReference(Border.BackgroundProperty, "Side");
         _sideNav.SetResourceReference(Border.BorderBrushProperty, "Bg3");
         return _sideNav;
     }
 
+    /// <summary>Справа: Вера комментирует раздел и твои изменения.</summary>
+    private Border Aside()
+    {
+        _asideText = Ui.Text("", 14, "VeraBubbleFg");
+        _asideText.LineHeight = 20;
+        var bubble = new Border
+        {
+            Child = _asideText,
+            CornerRadius = new CornerRadius(18),
+            BorderThickness = new Thickness(2.5),
+            BorderBrush = Brushes.Black,
+            Padding = new Thickness(14, 12, 14, 12),
+            Effect = Anim.HardShadow(3),
+            Margin = new Thickness(0, 0, 3, 14),
+        };
+        bubble.SetResourceReference(Border.BackgroundProperty, "Paper");
+        _asideArt = new Image { Height = 210, Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Bottom };
+        Anim.Breathe(_asideArt);
+        var caption = Ui.Text("Вера реагирует на то, что ты меняешь", 12, "Subtle");
+        caption.TextAlignment = TextAlignment.Center;
+        caption.Margin = new Thickness(0, 10, 0, 0);
+        var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Children = { bubble, _asideArt, caption } };
+        _aside = new Border { Width = 270, Padding = new Thickness(18, 24, 18, 22), BorderThickness = new Thickness(2, 0, 0, 0), Child = sp };
+        _aside.SetResourceReference(Border.BackgroundProperty, "Side");
+        _aside.SetResourceReference(Border.BorderBrushProperty, "Bg3");
+        return _aside;
+    }
+
+    private DateTime _commentUntil = DateTime.MinValue;
+
+    /// <summary>Вера говорит фразу в правой колонке (поза — по эмоции).</summary>
+    private void Comment(string text, string emotion)
+    {
+        if (_aside is null) return;
+        _asideText.Text = text;
+        var art = SkinArt.Pose(S.Skin, emotion);
+        RenderOptions.SetBitmapScalingMode(_asideArt, SkinArt.IsPixel(S.Skin) ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+        if (!ReferenceEquals(_asideArt.Source, art)) _asideArt.Source = art;
+        if (_aside.Child is Panel p && p.Children.Count > 0) Anim.Pop(p.Children[0], 280, 0.9);
+    }
+
+    private static readonly string[] SavedLines =
+    {
+        "Изменение принято в работу.", "Зафиксировала. Продолжай~", "Записала в протокол.", "Так-так, интересный выбор.",
+        "Сохранено. Не благодари.", "Хорошо, будет по-твоему. В этот раз.",
+    };
+
+    /// <summary>Настройку сохранили — короткая реакция (не чаще раза в пару секунд).</summary>
+    private void ReactSaved()
+    {
+        if (DateTime.Now < _commentUntil || _aside is null || !IsVisible) return;
+        _commentUntil = DateTime.Now.AddSeconds(2.5);
+        Comment(SavedLines[Random.Shared.Next(SavedLines.Length)], "smug");
+    }
+
     private ScrollViewer? _scroll;
 
-    /// <summary>Широко — меню слева, узко — «пилюли» над карточками.</summary>
+    /// <summary>Широко — меню слева и Вера справа, узко — поиск и «пилюли» над карточками.</summary>
     private void Relayout()
     {
         var wide = ActualWidth >= 720;
         if (_sideNav is not null) _sideNav.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
+        if (_aside is not null) _aside.Visibility = ActualWidth >= 1000 ? Visibility.Visible : Visibility.Collapsed;
         _chipRow.Visibility = wide ? Visibility.Collapsed : Visibility.Visible;
+        var host = wide ? _searchHostWide : _searchHostNarrow;
+        if (_search.Parent != host)
+        {
+            (_search.Parent as Panel)?.Children.Remove(_search);
+            host.Children.Add(_search);
+        }
+        _searchHostNarrow.Margin = wide ? new Thickness(0) : new Thickness(0, 0, 0, 4);
     }
 
     private Border Add(StackPanel root, Border card, string section)
@@ -150,9 +236,15 @@ public sealed partial class SettingsPanel
         var q = (_search?.Text ?? "").Trim().ToLowerInvariant();
         foreach (var c in _cards)
         {
-            var inSection = q.Length > 0 || _section == "all" || c.Section == _section;
+            var inSection = q.Length > 0 || c.Section == _section;
             var match = q.Length == 0 || q.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w => c.Keywords.Contains(w));
             c.Card.Visibility = inSection && match ? Visibility.Visible : Visibility.Collapsed;
+        }
+        var sec = Sections.First(x => x.Id == _section);
+        if (_sectionTitle is not null)
+        {
+            _sectionTitle.Text = q.Length > 0 ? "Поиск" : sec.Title;
+            _sectionAbout.Text = q.Length > 0 ? $"Настройки, где есть «{_search!.Text.Trim()}»" : sec.About;
         }
         foreach (var (id, rb) in _navItems)
         {
@@ -178,9 +270,13 @@ public sealed partial class SettingsPanel
     /// <summary>Открыть раздел настроек (например, из подсказки «скачай модель»).</summary>
     public void ShowSection(string id)
     {
-        _section = Sections.Any(s => s.Id == id) ? id : "all";
-        if (_search is not null) _search.Text = "";
+        _section = MapSection(id);
+        if (_search is not null && _search.Text.Length > 0) _search.Text = "";
         ApplyFilter();
+        _scroll?.ScrollToTop();
+        if (_scroll?.Content is UIElement content) Anim.SlideIn(content, 14, 200);
+        var sec = Sections.First(x => x.Id == _section);
+        Comment(sec.Comment, sec.Emotion);
     }
 
     // ================================================================== presets / first run
@@ -215,13 +311,13 @@ public sealed partial class SettingsPanel
         {
             var titles = Core.Secrets.Status().Where(s => missing.Contains(s.Name)).Select(s => s.Title);
             _window.Toast("Включено. Осталось добавить ключи: " + string.Join(", ", titles), true);
-            ShowSection("main");
+            ShowSection("keys");
         }
         else if (p.Id == "offline")
         {
             var need = OfflineMissing();
             _window.Toast(need.Count == 0 ? "Всё офлайн и готово~" : "Включено. Осталось скачать: " + string.Join(", ", need), need.Count > 0);
-            if (need.Count > 0) ShowSection("local");
+            if (need.Count > 0) ShowSection("brain");
         }
         else _window.Toast("Набор включён");
     }
@@ -247,7 +343,16 @@ public sealed partial class SettingsPanel
         string? badge = null, Action? onInstalled = null)
     {
         var store = Local?.Store;
-        var title = Ui.Text(a.Title + (badge is null ? "" : "  " + badge), 13, "Fg", FontWeights.SemiBold);
+        var titleText = Ui.Text(a.Title, 14, "Fg", FontWeights.Bold, wrap: false);
+        UIElement title = titleText;
+        if (badge is not null)
+        {
+            // пометка «подходит тебе» — золотая «пилюля»
+            var pill = new Border { CornerRadius = new CornerRadius(999), Padding = new Thickness(8, 1, 8, 2), Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            pill.SetResourceReference(Border.BackgroundProperty, "Accent");
+            pill.Child = Ui.Text(badge.Replace("⭐ ", ""), 11, "OnAccent", FontWeights.Bold, wrap: false);
+            title = new StackPanel { Orientation = Orientation.Horizontal, Children = { titleText, pill } };
+        }
         var size = a.SizeMB >= 1000 ? $"{a.SizeMB / 1024.0:0.#} ГБ" : $"{a.SizeMB} МБ";
         var marks = a.Kind == AssetKind.Llm
             ? $" · память от {a.MinRamGB} ГБ · команды {Stars(a.ToolsQuality)} · русский {Stars(a.RussianQuality)}"
@@ -368,12 +473,21 @@ public sealed partial class SettingsPanel
         _refreshers.Add(Update);
 
         var frame = RemindersPanel.ItemFrame(Ui.Row(new UIElement[] { body, buttons }, 8, 0));
-        frame.Margin = new Thickness(0, 0, 0, 6);
-        frame.Padding = new Thickness(10, 8, 8, 8);
+        frame.Margin = new Thickness(0, 0, 3, 9);
+        frame.Padding = new Thickness(14, 12, 12, 12);
+        frame.CornerRadius = new CornerRadius(16);
+        // выбранная модель/голос — стикер с чёрной обводкой и тенью
+        _refreshers.Add(() =>
+        {
+            var on = isSelected?.Invoke(S) == true && store?.IsInstalled(a) == true;
+            frame.BorderThickness = new Thickness(on ? 2.5 : 2);
+            if (on) frame.BorderBrush = Brushes.Black; else frame.SetResourceReference(Border.BorderBrushProperty, "Bg4");
+            frame.Effect = on ? Anim.HardShadow(3) : null;
+        });
         return frame;
     }
 
-    private static string Stars(int n) => new string('★', Math.Clamp(n, 0, 3)) + new string('☆', 3 - Math.Clamp(n, 0, 3));
+    private static string Stars(int n) => new string('●', Math.Clamp(n, 0, 3)) + new string('○', 3 - Math.Clamp(n, 0, 3));
 
     // ================================================================== local AI
 
@@ -395,7 +509,7 @@ public sealed partial class SettingsPanel
             llms.Children.Add(DownloadRow(a,
                 s => SamePath(local.Llm.ResolveModelPath(s.Models.GetValueOrDefault("local")), path),
                 s => { s.Models["local"] = path; s.Local.ModelPath = path; if (s.Provider != "local" && !ProviderReadyFor(s.Provider)) s.Provider = "local"; },
-                badge: a.Id == rec?.Id ? "⭐ рекомендую" : null));
+                badge: a.Id == rec?.Id ? "подходит тебе" : null));
         }
 
         // свой GGUF

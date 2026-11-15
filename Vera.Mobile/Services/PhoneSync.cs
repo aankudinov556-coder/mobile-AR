@@ -3,6 +3,7 @@ using Android.Content;
 using Vera.Core;
 using Vera.Core.Agent;
 using Vera.Core.Sync;
+using SyncResult = Vera.Core.Sync.SyncResult;
 using Vera.Mobile.Platform;
 
 namespace Vera.Mobile.Services;

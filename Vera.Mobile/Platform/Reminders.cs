@@ -21,6 +21,8 @@ public static class ReminderAlerts
             // одно и то же срабатывание (id + время) показываем один раз, даже если Tick повторится после перезапуска
             if (!ShownJournal.TryMark(r.Id, r.Due)) return;
             var core = VeraHost.Core;
+            // «где звенеть» (ПК привязан): только ПК / только телефон / там, где пользователь сейчас
+            if (!core.Sync.ShouldRingHere(DateTimeOffset.Now)) return;
             var phrase = core.ReminderPhrase(r, missed);
             var s = core.Settings.Current.Reminders;
             var ui = AppState.IsForeground && ForegroundDue is not null;
@@ -290,6 +292,7 @@ public sealed class BootReceiver : BroadcastReceiver
             core.Reminders.Tick(startup: boot);
             ReminderScheduler.Reschedule(core);
             core.Reminders.Flush();
+            Services.PhoneSync.ScheduleBackground();
         }
         catch (Exception e)
         {

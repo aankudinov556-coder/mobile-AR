@@ -45,10 +45,17 @@
 
   <ItemGroup>
     <!-- Иконка: тёмный фон + портрет Веры из ../assets/icon.png -->
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="..\assets\icon.png" ForegroundScale="0.62" Color="#15131c" />
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="..\assets\icon.png" ForegroundScale="0.62" Color="#0e0d12" />
 
     <!-- Тёмный сплэш -->
-    <MauiSplashScreen Include="..\assets\icon.png" Color="#15131c" BaseSize="144,144" />
+    <MauiSplashScreen Include="..\assets\icon.png" Color="#0e0d12" BaseSize="144,144" />
+
+    <!-- Шрифты «Ореола» (OFL): Onest — текст, Unbounded — заголовки -->
+    <MauiFont Include="..\assets\fonts\*.ttf" />
+
+    <!-- Скины-рисунки: halo и чиби (рисуются плавно, уменьшенные под телефон) -->
+    <MauiAsset Include="..\assets\skins\halo\*.png" LogicalName="skins/halo/%(Filename)%(Extension)" />
+    <MauiAsset Include="..\assets\skins\chibi\*.png" LogicalName="skins/chibi/%(Filename)%(Extension)" />
 
     <!-- Векторные иконки интерфейса -->
     <MauiImage Include="Resources\Images\*.svg" />

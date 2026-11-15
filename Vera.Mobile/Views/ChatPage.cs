@@ -1,6 +1,7 @@
 using System.Text;
 using Vera.Core;
 using Vera.Core.Agent;
+using Vera.Core.Documents;
 using Vera.Core.Providers;
 using Vera.Core.Speech;
 using Vera.Core.Sprites;
@@ -21,6 +22,8 @@ public sealed class ChatPage : ContentPage
         public StringBuilder Text { get; } = new();
         public List<ChipState> Tools { get; } = new();
         public int? LastStep { get; set; }
+        /// <summary>Где в тексте начинается каждый шаг модели (для TextReplaced).</summary>
+        public Dictionary<int, int> StepStart { get; } = new();
         public SentenceChunker? Chunker { get; set; }
         public bool Speak { get; set; }
         public string Source { get; init; } = "chat";
@@ -61,6 +64,10 @@ public sealed class ChatPage : ContentPage
     private bool _busy;
     private bool _stickToBottom = true;
     private readonly List<ImageData> _attachments = new();
+    private readonly List<DocumentText> _docs = new();
+    private Border _docBox = null!;
+    private Label _docLabel = null!;
+    private List<string>? _pendingDocs;
     private byte[]? _attachPreview;
     private byte[]? _pendingPreview;
     private bool _bubbleSticky;
@@ -90,13 +97,14 @@ public sealed class ChatPage : ContentPage
         {
             Spacing = 0,
             VerticalOptions = LayoutOptions.Center,
-            Children = { new Label { Text = "Вера", FontSize = 21, FontAttributes = FontAttributes.Bold, TextColor = Ui.Text }, _status },
+            Children = { Ui.Heading("Вера", 22), _status },
         };
-        _remBadgeText = new Label { FontSize = 10, TextColor = Colors.White, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center };
+        _remBadgeText = new Label { FontSize = 10, TextColor = Ui.OnAccent, FontFamily = Ui.FontBold, HorizontalTextAlignment = TextAlignment.Center };
         _remBadge = new Border
         {
             BackgroundColor = Ui.Accent,
-            StrokeThickness = 0,
+            Stroke = Ui.Ink,
+            StrokeThickness = 1.5,
             StrokeShape = Ui.Round(8),
             Padding = new Thickness(4, 0),
             MinimumWidthRequest = 16,
@@ -117,6 +125,7 @@ public sealed class ChatPage : ContentPage
             {
                 Ui.Icon("ic_new_chat.png", async (_, _) => await NewChatAsync()),
                 remBtn,
+                Ui.Icon("ic_sync.png", async (_, _) => await OpenPage(new SyncPage())),
                 Ui.Icon("ic_star.png", async (_, _) => await OpenPage(new MemoryPage())),
                 Ui.Icon("ic_gear.png", async (_, _) => await OpenPage(new SettingsPage())),
             },
@@ -128,7 +137,7 @@ public sealed class ChatPage : ContentPage
         };
         header.Add(title, 0);
         header.Add(icons, 1);
-        var headerLine = new BoxView { Color = Ui.Stroke, HeightRequest = 1, VerticalOptions = LayoutOptions.End, Opacity = 0.6 };
+        var headerLine = new BoxView { Color = Ui.Surface2, HeightRequest = 2, VerticalOptions = LayoutOptions.End };
 
         // ------------------------------------------------ сообщения
         _list = new VerticalStackLayout { Spacing = 10, Padding = new Thickness(12, 12, 12, 8) };
@@ -145,25 +154,25 @@ public sealed class ChatPage : ContentPage
         _vera.Tapped += Poke;
         _vera.LongPressed += () => { Touch(); _voice.Toggle(); };
 
-        _bubbleHead = new Label { FontSize = 12, TextColor = Color.FromArgb("#f08fc4"), FontAttributes = FontAttributes.Bold, IsVisible = false };
-        _bubbleText = new Label { FontSize = 14.5, TextColor = Ui.Text, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 7 };
+        _bubbleHead = new Label { FontSize = 12, TextColor = Ui.LinkOnPaper, FontFamily = Ui.FontBold, IsVisible = false };
+        _bubbleText = new Label { FontSize = 14.5, TextColor = Ui.InkText, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 7 };
         _bubbleActions = new HorizontalStackLayout { Spacing = 6, IsVisible = false, Margin = new Thickness(0, 4, 0, 0) };
         _levelBars = new HorizontalStackLayout { Spacing = 3, IsVisible = false, HeightRequest = 18, Margin = new Thickness(0, 2, 0, 0) };
         for (var i = 0; i < 7; i++)
             _levelBars.Children.Add(new BoxView { WidthRequest = 4, HeightRequest = 3, CornerRadius = 2, Color = Ui.Accent, VerticalOptions = LayoutOptions.Center });
         _bubble = new Border
         {
-            BackgroundColor = Ui.Surface3,
-            Stroke = Ui.Stroke,
-            StrokeThickness = 1,
-            StrokeShape = Ui.Round(16, 16, 4, 16),
-            Padding = new Thickness(12, 8, 12, 9),
+            BackgroundColor = Ui.Paper,
+            Stroke = Ui.Ink,
+            StrokeThickness = 2.5,
+            StrokeShape = Ui.Round(18, 18, 6, 18),
+            Padding = new Thickness(13, 9, 13, 10),
             HorizontalOptions = LayoutOptions.Start,
             VerticalOptions = LayoutOptions.End,
             Margin = new Thickness(veraLeft + 52 * _unit, 0, 12, (VeraSprite.SeatLine - 36) * _unit),
             IsVisible = false,
             Opacity = 0,
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.35f, Radius = 10, Offset = new Point(0, 3) },
+            Shadow = Ui.HardShadow(3),
             Content = new VerticalStackLayout { Spacing = 2, Children = { _bubbleHead, _bubbleText, _levelBars, _bubbleActions } },
         };
         var bubbleTap = new TapGestureRecognizer();
@@ -208,16 +217,20 @@ public sealed class ChatPage : ContentPage
 
         var photoBtn = Ui.Icon("ic_image.png", async (_, _) => await PickImageAsync(), 42, 9);
         photoBtn.VerticalOptions = LayoutOptions.End;
+        var clipBtn = Ui.Icon("ic_clip.png", async (_, _) => await PickDocumentsAsync(), 42, 9);
+        clipBtn.VerticalOptions = LayoutOptions.End;
         _micBtn = Ui.Icon("ic_mic.png", (_, _) => { Touch(); _voice.Toggle(); }, 42, 9);
         _micBtn.VerticalOptions = LayoutOptions.End;
         _sendBtn = new ImageButton
         {
-            Source = "ic_send.png",
-            WidthRequest = 44,
+            Source = "ic_send_dark.png",
+            WidthRequest = 48,
             HeightRequest = 44,
-            CornerRadius = 22,
+            CornerRadius = 14,
             Padding = new Thickness(11),
-            Background = Ui.AccentGradient,
+            BackgroundColor = Ui.Accent,
+            BorderColor = Ui.Ink,
+            BorderWidth = 2.5,
             VerticalOptions = LayoutOptions.End,
         };
         _sendBtn.Clicked += (_, _) => Send();
@@ -226,24 +239,49 @@ public sealed class ChatPage : ContentPage
         {
             ColumnDefinitions =
             {
-                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star),
+                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star),
                 new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto),
             },
             ColumnSpacing = 2,
-            Padding = new Thickness(4, 10, 5, 5),
+            Padding = new Thickness(4, 10, 6, 6),
         };
-        composerGrid.Add(photoBtn, 0);
-        composerGrid.Add(_input, 1);
-        composerGrid.Add(_micBtn, 2);
-        composerGrid.Add(_sendBtn, 3);
+        composerGrid.Add(clipBtn, 0);
+        composerGrid.Add(photoBtn, 1);
+        composerGrid.Add(_input, 2);
+        composerGrid.Add(_micBtn, 3);
+        composerGrid.Add(_sendBtn, 4);
+        // панель ввода — тёмный стикер с чёрной обводкой и жёсткой тенью
         var composer = new Border
         {
             BackgroundColor = Ui.Surface,
-            Stroke = Ui.Stroke,
-            StrokeThickness = 1,
-            StrokeShape = Ui.Round(24),
-            Margin = new Thickness(8, 0, 8, 8),
+            Stroke = Ui.Ink,
+            StrokeThickness = 2.5,
+            StrokeShape = Ui.Round(22),
+            Margin = new Thickness(10, 0, 13, 13),
+            Shadow = Ui.HardShadow(4),
             Content = composerGrid,
+        };
+
+        // приложенные документы
+        _docLabel = new Label { FontSize = 13, TextColor = Ui.InkText, FontFamily = Ui.FontBold, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 2 };
+        var docClose = Ui.Icon("ic_close.png", (_, _) => { _docs.Clear(); UpdateDocs(); }, 28, 6);
+        docClose.BackgroundColor = Ui.OnAccent;
+        var docGrid = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 6 };
+        docGrid.Add(_docLabel, 0);
+        docGrid.Add(docClose, 1);
+        _docBox = new Border
+        {
+            BackgroundColor = Ui.Accent,
+            Stroke = Ui.Ink,
+            StrokeThickness = 2,
+            StrokeShape = Ui.Round(14),
+            Padding = new Thickness(12, 6, 6, 6),
+            HorizontalOptions = LayoutOptions.End,
+            VerticalOptions = LayoutOptions.End,
+            MaximumWidthRequest = 260,
+            Margin = new Thickness(0, 0, 14, 10),
+            IsVisible = false,
+            Content = docGrid,
         };
 
         // ------------------------------------------------ раскладка
@@ -263,6 +301,7 @@ public sealed class ChatPage : ContentPage
         root.Add(_scroll, 0, 1);
         root.Add(_empty, 0, 1);
         root.Add(_attachBox, 0, 2);
+        root.Add(_docBox, 0, 2);
         root.Add(composer, 0, 3);
         // Вера поверх панели: строка SeatLine спрайта совпадает с верхним краем панели
         root.Add(_vera, 0, 2);
@@ -275,7 +314,10 @@ public sealed class ChatPage : ContentPage
         // ------------------------------------------------ события
         Core.Agent.Event += e => MainThread.BeginInvokeOnMainThread(() => OnAgentEvent(e));
         Core.Reminders.Changed += () => MainThread.BeginInvokeOnMainThread(UpdateBadge);
-        Core.Settings.Changed += _ => MainThread.BeginInvokeOnMainThread(UpdateStatus);
+        Core.Settings.Changed += _ => MainThread.BeginInvokeOnMainThread(() => { _vera.Skin = Core.Settings.Current.Skin ?? "vera"; UpdateStatus(); });
+        Core.Agent.HistoryChanged += () => MainThread.BeginInvokeOnMainThread(() => { if (!_busy) LoadHistory(); });
+        Core.Sync.Synced += _ => MainThread.BeginInvokeOnMainThread(UpdateStatus);
+        _vera.Skin = Core.Settings.Current.Skin ?? "vera";
         Core.Secrets.Changed += () => MainThread.BeginInvokeOnMainThread(UpdateStatus);
         ReminderAlerts.ForegroundDue += OnReminderDue;
         App.ReminderOpened += ShowReminderFromNotification;
@@ -391,12 +433,14 @@ public sealed class ChatPage : ContentPage
     {
         var s = Core.Settings.Current;
         var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
-        if (_busy) { _status.Text = "печатает…"; _status.TextColor = Color.FromArgb("#f08fc4"); return; }
-        if (_voice.IsCommandActive) { _status.Text = "слушает…"; _status.TextColor = Color.FromArgb("#f08fc4"); return; }
+        if (_busy) { _status.Text = "печатает…"; _status.TextColor = Ui.AccentText; return; }
+        if (_voice.IsCommandActive) { _status.Text = "слушает…"; _status.TextColor = Ui.AccentText; return; }
         _status.TextColor = Ui.Muted;
-        if (!Core.Secrets.Has(s.Provider)) _status.Text = $"нет ключа {title} — открой настройки";
+        var pc = Core.Sync.Peers.Where(p => p.LastSync is not null).OrderByDescending(p => p.LastSync).FirstOrDefault();
+        var sync = pc?.LastSync is { } at ? $" · ПК «{pc.Name}» {RuText.Relative(at)}" : "";
+        if (!Core.ProviderReady) _status.Text = $"нет ключа {title} — открой настройки";
         else if (_vera.Mode == PetMode.Sleeping) _status.Text = "спит… тапни, чтобы разбудить";
-        else _status.Text = $"{title} · {s.CurrentModel}";
+        else _status.Text = $"{title} · {s.CurrentModel}{sync}";
     }
 
     private void UpdateBadge()
@@ -453,7 +497,7 @@ public sealed class ChatPage : ContentPage
             VerticalOptions = LayoutOptions.Center,
             Children =
             {
-                new Label { Text = "Хе-хе, привет~", FontSize = 22, FontAttributes = FontAttributes.Bold, TextColor = Ui.Text, HorizontalTextAlignment = TextAlignment.Center },
+                new Label { Text = "Ну что, начнём?", FontSize = 22, FontFamily = Ui.Display, TextColor = Ui.Text, HorizontalTextAlignment = TextAlignment.Center },
                 new Label
                 {
                     Text = "Я Вера. Спроси что-нибудь, попроси напомнить, открыть приложение или включить фонарик. Долгий тап по мне — сказать голосом.",
@@ -512,9 +556,9 @@ public sealed class ChatPage : ContentPage
             return;
         }
         var text = (textOverride ?? _input.Text ?? "").Trim();
-        if (text.Length == 0 && _attachments.Count == 0) return;
+        if (text.Length == 0 && _attachments.Count == 0 && _docs.Count == 0) return;
         var s = Core.Settings.Current;
-        if (!Core.Secrets.Has(s.Provider))
+        if (!Core.ProviderReady)
         {
             var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
             _vera.SetEmotion("angry", 5000);
@@ -528,11 +572,15 @@ public sealed class ChatPage : ContentPage
             return;
         }
         var images = _attachments.Count > 0 && textOverride is null ? _attachments.ToList() : null;
+        var docs = _docs.Count > 0 && textOverride is null ? _docs.ToList() : null;
         if (textOverride is null)
         {
             _input.Text = "";
             _pendingPreview = _attachPreview;
+            _pendingDocs = docs?.Select(d => d.Name).ToList();
             ClearAttachments();
+            _docs.Clear();
+            UpdateDocs();
         }
         else _pendingPreview = null;
         _speech.ResetErrors();
@@ -541,9 +589,9 @@ public sealed class ChatPage : ContentPage
         {
             try
             {
-                await Core.Agent.SendAsync(text, images, source);
+                await Core.Agent.SendAsync(text, images, source, documents: docs);
             }
-            catch (InvalidOperationException e) when (e.Message.StartsWith("Вера ещё", StringComparison.Ordinal))
+            catch (AgentBusyException e)
             {
                 Ui.Toast(e.Message);
             }
@@ -557,7 +605,7 @@ public sealed class ChatPage : ContentPage
     private void UpdateSendIcon()
     {
         var stop = _busy || (_speech.IsActive && string.IsNullOrWhiteSpace(_input.Text) && _attachments.Count == 0);
-        var src = stop ? "ic_stop.png" : "ic_send.png";
+        var src = stop ? "ic_stop_dark.png" : "ic_send_dark.png";
         if (_sendBtn.Source is FileImageSource f && f.File == src) return;
         _sendBtn.Source = src;
     }
@@ -606,6 +654,53 @@ public sealed class ChatPage : ContentPage
         }
     }
 
+    // ================================================================== документы
+
+    private async Task PickDocumentsAsync()
+    {
+        Touch();
+        try
+        {
+            var files = await FilePicker.Default.PickMultipleAsync(new PickOptions { PickerTitle = "Что показать Вере?" });
+            if (files is null) return;
+            foreach (var f in files)
+            {
+                if (f is null) continue;
+                var name = f.FileName;
+                if (!DocumentReader.IsSupported(name))
+                {
+                    Ui.Toast($"«{name}»: такой формат пока не читаю. Подойдут PDF, DOCX, TXT/MD/CSV и код.", true);
+                    continue;
+                }
+                await using var stream = await f.OpenReadAsync();
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+                var doc = await Task.Run(() => DocumentReader.Read(bytes, name));
+                if (string.IsNullOrWhiteSpace(doc.Text)) { Ui.Toast($"В «{name}» не нашлось текста", true); continue; }
+                _docs.Add(doc);
+            }
+            UpdateDocs();
+            _vera.SetEmotion("think", 2500);
+        }
+        catch (PermissionException)
+        {
+            Ui.Toast("Нет разрешения на файлы");
+        }
+        catch (Exception e)
+        {
+            Ui.Toast("Не получилось прочитать файл: " + e.Message, true);
+        }
+    }
+
+    private void UpdateDocs()
+    {
+        _docBox.IsVisible = _docs.Count > 0;
+        _docLabel.Text = string.Join("\n", _docs.Select(d => "📄 " + d.Name + (d.Pages > 0 ? $" · {d.Pages} стр." : "")));
+        if (_docs.Count > 0 && string.IsNullOrWhiteSpace(_input.Text)) _input.Placeholder = "Что сделать с документом?";
+        UpdateSendIcon();
+    }
+
     private void ClearAttachments()
     {
         _attachments.Clear();
@@ -644,10 +739,12 @@ public sealed class ChatPage : ContentPage
                 {
                     var u = new MessageView(true, DateTimeOffset.Now);
                     var preview = _pendingPreview;
-                    u.SetUser(ts.UserText, preview is not null ? ImageSource.FromStream(() => new MemoryStream(preview)) : null, ts.HasImage);
+                    var userText = ts.UserText + (_pendingDocs is { Count: > 0 } pd ? "\n" + string.Join("\n", pd.Select(n => "📄 " + n)) : "");
+                    u.SetUser(userText, preview is not null ? ImageSource.FromStream(() => new MemoryStream(preview)) : null, ts.HasImage);
                     _list.Children.Add(u);
                 }
                 _pendingPreview = null;
+                _pendingDocs = null;
                 var v = new MessageView(false, DateTimeOffset.Now);
                 v.SetVera("", Array.Empty<ChipState>(), typing: true);
                 _list.Children.Add(v);
@@ -674,12 +771,25 @@ public sealed class ChatPage : ContentPage
                     var trimmed = t.Text.ToString().TrimEnd();
                     t.Text.Clear().Append(trimmed).Append("\n\n");
                 }
+                if (!t.StepStart.ContainsKey(d.Step)) t.StepStart[d.Step] = t.Text.Length;
                 t.LastStep = d.Step;
                 t.Text.Append(d.Delta);
                 if (_vera.Mode == PetMode.Thinking) _vera.Mode = PetMode.Talking;
                 if (!t.Speak) _vera.Flap();
                 t.Chunker?.Push(d.Delta);
                 MarkDirty(d.TurnId);
+                break;
+            }
+            case TextReplaced tr:
+            {
+                // модель написала команду JSON-ом — её выполнили, убираем JSON из текста
+                if (!_live.TryGetValue(tr.TurnId, out var t)) return;
+                var start = t.StepStart.TryGetValue(tr.Step, out var st) ? Math.Min(st, t.Text.Length) : t.Text.Length;
+                t.Text.Length = start;
+                t.Text.Append(tr.Text);
+                t.StepStart[tr.Step] = start;
+                t.LastStep = tr.Step;
+                MarkDirty(tr.TurnId);
                 break;
             }
             case ToolActivity ta:
@@ -691,7 +801,7 @@ public sealed class ChatPage : ContentPage
                 chip.Label = ta.Label;
                 chip.IsError = ta.IsError;
                 if (ta.Running && _vera.Mode != PetMode.Talking) _vera.Mode = PetMode.Thinking;
-                if (!ta.Running && ta.Kind == "reminder") { Fx("⏰", Colors.White, 46, -4); _vera.Hop(); }
+                if (!ta.Running && ta.Kind == "reminder") { Fx("⏰", Ui.Accent, 46, -4); _vera.Hop(); }
                 if (!ta.Running && ta.Kind == "memory") Fx("✦", Color.FromArgb("#ffd166"), 46, -2);
                 MarkDirty(ta.TurnId);
                 break;

@@ -46,7 +46,7 @@ public static class Markdown
                     var marker = new Label
                     {
                         Text = b.Kind == MdBlockKind.Bullet ? "•" : $"{n++}.",
-                        TextColor = Ui.Accent,
+                        TextColor = Ui.LinkOnPaper,
                         FontSize = size,
                         FontAttributes = FontAttributes.Bold,
                         MinimumWidthRequest = 14,
@@ -65,7 +65,7 @@ public static class Markdown
                     ColumnSpacing = 10,
                 };
                 g.Add(new BoxView { Color = Ui.Accent2, CornerRadius = 2 }, 0);
-                var l = Inline(b.Inlines, Ui.Muted, size);
+                var l = Inline(b.Inlines, Color.FromArgb("#5f5949"), size);
                 l.FontAttributes = FontAttributes.Italic;
                 g.Add(l, 1);
                 return g;
@@ -120,7 +120,7 @@ public static class Markdown
         {
             Text = "Копировать",
             FontSize = 12,
-            TextColor = Ui.Muted,
+            TextColor = Color.FromArgb("#5f5949"),
             HorizontalOptions = LayoutOptions.End,
             Padding = new Thickness(8, 2),
         };

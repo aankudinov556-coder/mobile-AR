@@ -35,6 +35,7 @@ public static class VeraHost
             core.Reminders.Changed += () => ReminderScheduler.Reschedule(core);
             core.Reminders.Due += ReminderAlerts.OnDue;
             Volatile.Write(ref _core, core);
+            try { PhoneSync.Init(core); } catch { }
             try { ReminderNotifier.EnsureChannel(); } catch { }
             try { ReminderScheduler.Reschedule(core); } catch { }
             return core;
@@ -59,6 +60,11 @@ public static class AppState
     /// <summary>Окно приложения на экране.</summary>
     public static bool IsForeground => Volatile.Read(ref _resumed) > 0;
 
+    private static DateTimeOffset _lastActive = DateTimeOffset.MinValue;
+
+    /// <summary>Когда приложение последний раз было на экране (для «звенеть там, где я сейчас»).</summary>
+    public static DateTimeOffset? LastActive => IsForeground ? DateTimeOffset.Now : _lastActive == DateTimeOffset.MinValue ? null : _lastActive;
+
     /// <summary>Открыт экран чата (Веру видно).</summary>
     public static bool ChatVisible { get; set; }
 
@@ -67,6 +73,7 @@ public static class AppState
     public static void SetForeground(bool value)
     {
         var old = Interlocked.Exchange(ref _resumed, value ? 1 : 0) > 0;
+        if (old || value) _lastActive = DateTimeOffset.Now;
         if (old != value) ForegroundChanged?.Invoke(value);
     }
 }

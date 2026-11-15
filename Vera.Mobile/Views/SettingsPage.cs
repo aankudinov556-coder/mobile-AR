@@ -44,24 +44,32 @@ public sealed class SettingsPage : ContentPage
         _welcome.Stroke = Ui.Accent.WithAlpha(0.5f);
 
         // ------------------------------------------------ модель
-        var seg = new Grid { ColumnSpacing = 6 };
-        var i = 0;
-        foreach (var (id, title, _) in ProviderRegistry.Known)
+        // провайдеры карточками 2×2 (встроенная модель — только на ПК)
+        var seg = new Grid
         {
-            seg.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            ColumnSpacing = 8,
+            RowSpacing = 8,
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
+        };
+        var i = 0;
+        foreach (var (id, title, _) in ProviderRegistry.Known.Where(k => App.Core.Providers.IsAvailable(k.Id)))
+        {
+            if (i % 2 == 0) seg.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             var b = new Button
             {
                 Text = title,
-                CornerRadius = 12,
+                CornerRadius = 14,
                 FontSize = 13.5,
-                Padding = new Thickness(4, 6),
-                MinimumHeightRequest = 40,
-                BorderWidth = 1,
+                FontFamily = Ui.FontBold,
+                Padding = new Thickness(4, 8),
+                MinimumHeightRequest = 46,
+                BorderWidth = 2,
             };
             var pid = id;
             b.Clicked += (_, _) => SetProvider(pid);
             _providerButtons[id] = b;
-            seg.Add(b, i++);
+            seg.Add(b, i % 2, i / 2);
+            i++;
         }
         _model = Ui.Entry("название модели");
         _model.ClearButtonVisibility = ClearButtonVisibility.Never;
@@ -95,6 +103,7 @@ public sealed class SettingsPage : ContentPage
         var personaCard = Ui.Card(
             Ui.H3("💁 Характер"),
             Ui.Field("Как Вере тебя называть", Ui.Box(TextSetting("семпай", s => s.UserName, (s, v) => s.UserName = v, 40))),
+            Ui.Field("Город (для погоды и сводки)", Ui.Box(TextSetting("Москва", s => s.City, (s, v) => s.City = v.Trim(), 60))),
             Ui.Field("Характер", Choice(personaIds, personaIds.Select(p => Personas.All[p].Label).ToArray(), s => s.Persona, (s, v) => s.Persona = v)),
             Ui.Field("Дополнительные указания (системный промпт)", Ui.Box(EditorSetting(
                 "Например: я студент-медик, объясняй просто и с примерами", s => s.CustomPrompt, (s, v) => s.CustomPrompt = v), 90)));
@@ -239,16 +248,24 @@ public sealed class SettingsPage : ContentPage
             Ui.MutedLabel("Напоминания, долгая память и погода доступны всегда. Звонить сама Вера не может — только откроет звонилку с номером."));
 
         // ------------------------------------------------ Вера
+        var skinIds = Vera.Core.Sprites.Skins.All.Select(x => x.Id).ToArray();
         var petCard = Ui.Card(
             Ui.H3("🧸 Вера"),
+            Ui.Field("Скин", Choice(skinIds, Vera.Core.Sprites.Skins.All.Select(x => x.Title).ToArray(), s => s.Skin ?? "vera", (s, v) => s.Skin = v)),
             Ui.Toggle("Иногда болтает сама (без API)", S.Pet.IdleChatter, v => Set(s => s.Pet.IdleChatter = v)),
             SliderRow("Сколько показывать реплику", 3, 30, 1, s => s.Pet.BubbleSeconds, (s, v) => s.Pet.BubbleSeconds = (int)v, v => (int)v + " с"),
             Ui.MutedLabel("Тап по Вере — потыкать, долгий тап — сказать голосом. Если долго ничего не делать — она уснёт."));
 
+        var syncBtn = Ui.Primary("Синхронизация с ПК", async (_, _) => await Navigation.PushAsync(new SyncPage()));
+        var syncCard = Ui.Card(
+            Ui.H3("💻 Компьютер"),
+            Ui.MutedLabel("Память, напоминания, чат и характер — одинаковые на телефоне и ПК. Связь только в домашней сети, всё шифруется."),
+            syncBtn);
+
         var about = Ui.Card(
             Ui.H3("ℹ️ О приложении"),
             Ui.Label($"Вера v{AppInfo.Current.VersionString} для Android", 14),
-            Ui.MutedLabel("Данные (настройки, история, напоминания, память) хранятся только на телефоне."));
+            Ui.MutedLabel("Данные хранятся на телефоне; с ПК — только если привязан (Синхронизация с ПК)."));
 
         Content = new ScrollView
         {
@@ -256,7 +273,7 @@ public sealed class SettingsPage : ContentPage
             {
                 Spacing = 14,
                 Padding = new Thickness(14, 12, 14, 32),
-                Children = { _welcome, modelCard, keysCard, personaCard, voiceCard, sttCard, remCard, capsCard, petCard, about },
+                Children = { _welcome, modelCard, keysCard, syncCard, personaCard, voiceCard, sttCard, remCard, capsCard, petCard, about },
             },
         };
         _loading = false;
@@ -395,11 +412,10 @@ public sealed class SettingsPage : ContentPage
         foreach (var (id, b) in _providerButtons)
         {
             var on = id == p;
-            b.Background = on ? Ui.AccentGradient : null;
             b.BackgroundColor = on ? Ui.Accent : Ui.Surface2;
-            b.TextColor = on ? Colors.White : Ui.Text;
-            b.BorderColor = on ? Colors.Transparent : Ui.Stroke;
-            b.FontAttributes = on ? FontAttributes.Bold : FontAttributes.None;
+            b.TextColor = on ? Ui.OnAccent : Ui.Text;
+            b.BorderColor = on ? Ui.Ink : Ui.Stroke;
+            b.BorderWidth = on ? 2.5 : 2;
         }
         _model.Text = S.CurrentModel;
         _modelHint.Text = ProviderRegistry.Known.FirstOrDefault(k => k.Id == p).Hint ?? "";

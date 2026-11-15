@@ -5,28 +5,60 @@ namespace Vera.Mobile.Views;
 /// <summary>Палитра и маленькие фабрики контролов (интерфейс собран кодом, без XAML).</summary>
 public static class Ui
 {
-    public static readonly Color Bg = Color.FromArgb("#15131c");
-    public static readonly Color Surface = Color.FromArgb("#1d1a27");
-    public static readonly Color Surface2 = Color.FromArgb("#262134");
-    public static readonly Color Surface3 = Color.FromArgb("#302a41");
-    public static readonly Color Stroke = Color.FromArgb("#332d45");
-    public static readonly Color Text = Color.FromArgb("#ece8f5");
-    public static readonly Color Muted = Color.FromArgb("#9a93ad");
-    public static readonly Color Faint = Color.FromArgb("#6f6884");
-    public static readonly Color Accent = Color.FromArgb("#e0479a");
-    public static readonly Color Accent2 = Color.FromArgb("#9b5cf0");
-    public static readonly Color AccentSoft = Color.FromArgb("#3a2140");
-    public static readonly Color Danger = Color.FromArgb("#ff5d73");
-    public static readonly Color DangerSoft = Color.FromArgb("#3a1d27");
-    public static readonly Color Warn = Color.FromArgb("#f5b544");
-    public static readonly Color Ok = Color.FromArgb("#4fd18b");
-    public static readonly Color CodeBg = Color.FromArgb("#100e16");
+    // «Ореол»: чернила, золото нимба, бумага реплик
+    public static readonly Color Bg = Color.FromArgb("#0e0d12");
+    public static readonly Color Surface = Color.FromArgb("#17161d");
+    public static readonly Color Surface2 = Color.FromArgb("#24222c");
+    public static readonly Color Surface3 = Color.FromArgb("#2e2c37");
+    public static readonly Color Stroke = Color.FromArgb("#3e3b48");
+    public static readonly Color Text = Color.FromArgb("#f4f1e8");
+    public static readonly Color Muted = Color.FromArgb("#a6a1b2");
+    public static readonly Color Faint = Color.FromArgb("#8e899a");
+    public static readonly Color Accent = Color.FromArgb("#f5cf3a");
+    public static readonly Color Accent2 = Color.FromArgb("#f5cf3a");
+    public static readonly Color AccentSoft = Color.FromArgb("#2c2814");
+    public static readonly Color AccentText = Color.FromArgb("#f5cf3a");
+    /// <summary>Текст на золоте.</summary>
+    public static readonly Color OnAccent = Color.FromArgb("#16141a");
+    /// <summary>Бумага реплик Веры и поля ввода.</summary>
+    public static readonly Color Paper = Color.FromArgb("#fffdf5");
+    /// <summary>Чернила: обводки стикеров и текст на бумаге.</summary>
+    public static readonly Color Ink = Color.FromArgb("#000000");
+    public static readonly Color InkText = Color.FromArgb("#16141a");
+    /// <summary>Ссылки на бумаге (тёмное золото — читается на белом).</summary>
+    public static readonly Color LinkOnPaper = Color.FromArgb("#7a5800");
+    public static readonly Color Danger = Color.FromArgb("#ff7a6b");
+    public static readonly Color DangerSoft = Color.FromArgb("#3a1d22");
+    public static readonly Color Warn = Color.FromArgb("#ffb347");
+    public static readonly Color Ok = Color.FromArgb("#6fd69b");
+    public static readonly Color CodeBg = Color.FromArgb("#0a090d");
 
-    public static Brush AccentGradient => new LinearGradientBrush(new GradientStopCollection
+    /// <summary>Шрифты (встроены): Onest — текст, Unbounded — заголовки.</summary>
+    public const string Font = "Onest";
+    public const string FontBold = "OnestBold";
+    public const string Display = "UnboundedBlack";
+    public const string DisplayBold = "UnboundedBold";
+
+    /// <summary>Жёсткая «стикерная» тень без размытия.</summary>
+    public static Shadow HardShadow(double depth = 3) => new()
     {
-        new GradientStop(Accent, 0f),
-        new GradientStop(Accent2, 1f),
-    }, new Point(0, 0), new Point(1, 1));
+        Brush = new SolidColorBrush(Ink),
+        Offset = new Point(depth, depth),
+        Radius = 0,
+        Opacity = 1f,
+    };
+
+    /// <summary>Крупный заголовок шрифтом Unbounded.</summary>
+    public static Label Heading(string text, double size = 22) => new()
+    {
+        Text = text,
+        FontSize = size,
+        FontFamily = Display,
+        TextColor = Text,
+        LineBreakMode = LineBreakMode.TailTruncation,
+    };
+
+    public static Brush AccentGradient => new SolidColorBrush(Accent);
 
     public const string Mono = "monospace";
 
@@ -47,8 +79,8 @@ public static class Ui
     public static Label H3(string text) => new()
     {
         Text = text,
-        FontSize = 17,
-        FontAttributes = FontAttributes.Bold,
+        FontSize = 16,
+        FontFamily = DisplayBold,
         TextColor = Text,
         Margin = new Thickness(0, 0, 0, 2),
     };
@@ -60,9 +92,9 @@ public static class Ui
         return new Border
         {
             BackgroundColor = Surface,
-            Stroke = Stroke,
-            StrokeThickness = 1,
-            StrokeShape = Round(18),
+            Stroke = Surface3,
+            StrokeThickness = 2,
+            StrokeShape = Round(20),
             Padding = new Thickness(16, 14),
             Content = stack,
         };
@@ -82,8 +114,8 @@ public static class Ui
     {
         BackgroundColor = Surface2,
         Stroke = Stroke,
-        StrokeThickness = 1,
-        StrokeShape = Round(12),
+        StrokeThickness = 2,
+        StrokeShape = Round(14),
         Padding = new Thickness(12, 0),
         MinimumHeightRequest = minHeight,
         Content = control,
@@ -125,14 +157,16 @@ public static class Ui
         var b = new Button
         {
             Text = text,
-            TextColor = Colors.White,
-            Background = AccentGradient,
+            TextColor = OnAccent,
             BackgroundColor = Accent,
-            CornerRadius = 12,
-            FontAttributes = FontAttributes.Bold,
-            FontSize = 14,
-            Padding = new Thickness(14, 8),
-            MinimumHeightRequest = 42,
+            BorderColor = Ink,
+            BorderWidth = 2.5,
+            CornerRadius = 14,
+            FontFamily = FontBold,
+            FontSize = 15,
+            Padding = new Thickness(16, 10),
+            MinimumHeightRequest = 46,
+            Shadow = HardShadow(3),
         };
         b.Clicked += onClick;
         return b;
@@ -144,13 +178,14 @@ public static class Ui
         {
             Text = text,
             TextColor = color ?? Text,
-            BackgroundColor = Surface3,
+            BackgroundColor = Surface2,
             BorderColor = Stroke,
-            BorderWidth = 1,
-            CornerRadius = 12,
+            BorderWidth = 2,
+            CornerRadius = 14,
+            FontFamily = FontBold,
             FontSize = 14,
-            Padding = new Thickness(12, 6),
-            MinimumHeightRequest = 40,
+            Padding = new Thickness(14, 8),
+            MinimumHeightRequest = 44,
         };
         b.Clicked += onClick;
         return b;
@@ -162,12 +197,15 @@ public static class Ui
         {
             Text = text,
             TextColor = Text,
-            BackgroundColor = Surface3,
-            CornerRadius = 16,
+            BackgroundColor = Colors.Transparent,
+            BorderColor = Stroke,
+            BorderWidth = 2,
+            CornerRadius = 18,
+            FontFamily = FontBold,
             FontSize = 13,
-            Padding = new Thickness(12, 4),
-            MinimumHeightRequest = 34,
-            HeightRequest = 36,
+            Padding = new Thickness(14, 4),
+            MinimumHeightRequest = 36,
+            HeightRequest = 38,
         };
         b.Clicked += onClick;
         return b;
@@ -191,7 +229,7 @@ public static class Ui
     /// <summary>Строка с переключателем: текст слева, Switch справа.</summary>
     public static Grid Toggle(string text, bool value, Action<bool> changed, string? hint = null)
     {
-        var sw = new Switch { IsToggled = value, OnColor = Accent, ThumbColor = Colors.White, VerticalOptions = LayoutOptions.Center };
+        var sw = new Switch { IsToggled = value, OnColor = Accent, ThumbColor = Paper, VerticalOptions = LayoutOptions.Center };
         sw.Toggled += (_, e) => changed(e.Value);
         var texts = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center };
         texts.Children.Add(Label(text, 15));

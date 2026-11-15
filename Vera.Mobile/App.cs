@@ -32,6 +32,14 @@ public partial class App : Application
     public App()
     {
         UserAppTheme = AppTheme.Dark;
+        // шрифт Onest по умолчанию для всего текста
+        foreach (var (type, prop) in new (Type, BindableProperty)[]
+                 {
+                     (typeof(Label), Label.FontFamilyProperty), (typeof(Button), Button.FontFamilyProperty),
+                     (typeof(Entry), Entry.FontFamilyProperty), (typeof(Editor), Editor.FontFamilyProperty),
+                     (typeof(Picker), Picker.FontFamilyProperty),
+                 })
+            Resources.Add(new Style(type) { Setters = { new Setter { Property = prop, Value = Ui.Font } } });
         Resources.Add(new Style(typeof(NavigationPage))
         {
             Setters =
@@ -76,12 +84,55 @@ public partial class App : Application
         }
         _ticker.Start();
         _ = Voice.SyncWakeAsync();
+        // синхронизация с ПК: сразу при открытии и раз в 15 минут, пока открыто
+        PhoneSync.ScheduleBackground();
+        PhoneSync.Soon();
+        if (_syncTicker is null)
+        {
+            _syncTicker = Dispatcher.CreateTimer();
+            _syncTicker.Interval = TimeSpan.FromMinutes(15);
+            _syncTicker.Tick += (_, _) => _ = PhoneSync.SyncNowAsync(quiet: true);
+        }
+        _syncTicker.Start();
+        if (PendingPairing is { } qr)
+        {
+            PendingPairing = null;
+            OpenPairing(qr);
+        }
+    }
+
+    private IDispatcherTimer? _syncTicker;
+
+    /// <summary>Ссылка привязки из QR (vera-sync://pair?...), пришедшая до появления окна.</summary>
+    public static string? PendingPairing { get; set; }
+
+    /// <summary>Открыть экран синхронизации и привязать ПК по ссылке из QR-кода.</summary>
+    public static void OpenPairing(string qr)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            try
+            {
+                if (Current?.Windows.FirstOrDefault()?.Page is NavigationPage nav)
+                {
+                    var page = new SyncPage();
+                    await nav.PushAsync(page);
+                    page.Pair(qr);
+                }
+                else PendingPairing = qr;
+            }
+            catch (Exception e)
+            {
+                Ui.Toast("Не получилось открыть привязку: " + e.Message, true);
+            }
+        });
     }
 
     private void OnBackground()
     {
         AppState.SetForeground(false);
         _ticker?.Stop();
+        _syncTicker?.Stop();
         Voice.Suspend();
         VeraHost.Flush();
     }

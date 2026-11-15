@@ -10,7 +10,15 @@ public static class MauiProgram
     public static MauiApp CreateMauiApp()
     {
         var builder = MauiApp.CreateBuilder();
-        builder.UseMauiApp<App>().UseSkiaSharp();
+        builder.UseMauiApp<App>().UseSkiaSharp()
+            .ConfigureFonts(f =>
+            {
+                f.AddFont("Onest-Regular.ttf", "Onest");
+                f.AddFont("Onest-SemiBold.ttf", "OnestSemiBold");
+                f.AddFont("Onest-Bold.ttf", "OnestBold");
+                f.AddFont("Unbounded-Bold.ttf", "UnboundedBold");
+                f.AddFont("Unbounded-Black.ttf", "UnboundedBlack");
+            });
 
         // Тёмные поля ввода без «материального» подчёркивания Android
         var clear = ColorStateList.ValueOf(Android.Graphics.Color.Transparent);

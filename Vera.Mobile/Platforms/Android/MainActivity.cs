@@ -10,6 +10,9 @@ namespace Vera.Mobile;
     WindowSoftInputMode = Android.Views.SoftInput.AdjustResize,
     ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout |
                            ConfigChanges.SmallestScreenSize | ConfigChanges.Density | ConfigChanges.KeyboardHidden)]
+// QR-код привязки с ПК (vera-sync://pair?...) открывает Веру из любой камеры
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+    DataScheme = "vera-sync", DataHost = "pair")]
 public class MainActivity : MauiAppCompatActivity
 {
     public const string ExtraReminderId = "vera_reminder_id";
@@ -24,7 +27,7 @@ public class MainActivity : MauiAppCompatActivity
                 var c = WindowCompat.GetInsetsController(w, w.DecorView);
                 c.AppearanceLightStatusBars = false;
                 c.AppearanceLightNavigationBars = false;
-                w.DecorView.SetBackgroundColor(Android.Graphics.Color.ParseColor("#15131c"));
+                w.DecorView.SetBackgroundColor(Android.Graphics.Color.ParseColor("#0e0d12"));
             }
         }
         catch { }
@@ -40,6 +43,12 @@ public class MainActivity : MauiAppCompatActivity
 
     private static void HandleIntent(Intent? intent)
     {
+        if (intent?.Action == Intent.ActionView && intent.DataString is { } link && link.StartsWith("vera-sync://", StringComparison.OrdinalIgnoreCase))
+        {
+            intent.SetData(null);
+            App.OpenPairing(link);
+            return;
+        }
         var id = intent?.GetStringExtra(ExtraReminderId);
         if (string.IsNullOrEmpty(id)) return;
         intent!.RemoveExtra(ExtraReminderId);

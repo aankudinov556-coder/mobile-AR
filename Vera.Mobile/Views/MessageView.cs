@@ -32,16 +32,19 @@ public sealed class MessageView : ContentView
         };
         _tools = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, IsVisible = false };
         _body = new ContentView();
+        // комикс-пузыри: Вера — белая бумага с чёрной обводкой, пользователь — золотой стикер
         _bubble = new Border
         {
-            Padding = new Thickness(13, 9, 13, 10),
-            StrokeThickness = 0,
-            StrokeShape = user ? Ui.Round(18, 18, 18, 5) : Ui.Round(18, 18, 5, 18),
+            Padding = new Thickness(14, 10, 14, 11),
+            Stroke = Ui.Ink,
+            StrokeThickness = 2.5,
+            Shadow = Ui.HardShadow(3),
+            Margin = new Thickness(0, 0, 3, 3),
+            StrokeShape = user ? Ui.Round(20, 20, 20, 6) : Ui.Round(20, 20, 6, 20),
             HorizontalOptions = user ? LayoutOptions.End : LayoutOptions.Start,
             Content = new VerticalStackLayout { Spacing = 6, Children = { _tools, _body } },
         };
-        if (user) _bubble.Background = Ui.AccentGradient;
-        else _bubble.BackgroundColor = Ui.Surface2;
+        _bubble.BackgroundColor = user ? Ui.Accent : Ui.Paper;
 
         Content = new VerticalStackLayout
         {
@@ -81,10 +84,10 @@ public sealed class MessageView : ContentView
         }
         else if (hadImage)
         {
-            stack.Children.Add(new Label { Text = "📎 изображение", FontSize = 12, TextColor = Colors.White.WithAlpha(0.8f) });
+            stack.Children.Add(new Label { Text = "📎 изображение", FontSize = 12, TextColor = Ui.OnAccent.WithAlpha(0.8f) });
         }
         if (!string.IsNullOrWhiteSpace(text))
-            stack.Children.Add(new Label { Text = text, TextColor = Colors.White, FontSize = 15.5, LineBreakMode = LineBreakMode.WordWrap });
+            stack.Children.Add(new Label { Text = text, TextColor = Ui.OnAccent, FontSize = 15.5, FontFamily = Ui.Font, LineBreakMode = LineBreakMode.WordWrap });
         _body.Content = stack;
     }
 
@@ -97,8 +100,9 @@ public sealed class MessageView : ContentView
             var label = t.Running ? "⚙️ " + Human(t.Name) + "…" : (string.IsNullOrEmpty(t.Label) ? t.Name : t.Label);
             _tools.Children.Add(new Border
             {
-                BackgroundColor = t.IsError ? Ui.DangerSoft : t.Running ? Ui.Surface3 : Ui.AccentSoft,
-                StrokeThickness = 0,
+                BackgroundColor = t.IsError ? Ui.DangerSoft : t.Running ? Color.FromArgb("#ece8dc") : Ui.Accent,
+                Stroke = t.Running ? Colors.Transparent : Ui.Ink,
+                StrokeThickness = t.Running ? 0 : 2,
                 StrokeShape = Ui.Round(10),
                 Padding = new Thickness(9, 4),
                 Margin = new Thickness(0, 0, 6, 6),
@@ -106,7 +110,8 @@ public sealed class MessageView : ContentView
                 {
                     Text = label,
                     FontSize = 12.5,
-                    TextColor = t.IsError ? Ui.Danger : t.Running ? Ui.Muted : Color.FromArgb("#f6c4e0"),
+                    TextColor = t.IsError ? Ui.Danger : Ui.InkText,
+                    FontFamily = Ui.FontBold,
                     LineBreakMode = LineBreakMode.TailTruncation,
                     MaxLines = 2,
                 },
@@ -114,16 +119,15 @@ public sealed class MessageView : ContentView
         }
         _tools.IsVisible = tools.Count > 0;
 
-        if (!string.IsNullOrWhiteSpace(text)) _body.Content = Markdown.Render(text, Ui.Text, 15.5);
+        if (!string.IsNullOrWhiteSpace(text)) _body.Content = Markdown.Render(text, Ui.InkText, 15.5);
         else if (typing) _body.Content = new TypingDots();
         else _body.Content = null;
         _body.IsVisible = _body.Content is not null;
 
         if (error)
         {
-            _bubble.BackgroundColor = Ui.DangerSoft;
-            _bubble.Stroke = Ui.Danger.WithAlpha(0.4f);
-            _bubble.StrokeThickness = 1;
+            _bubble.BackgroundColor = Color.FromArgb("#ffe9e6");
+            _bubble.Stroke = Ui.Ink;
         }
     }
 
@@ -165,7 +169,7 @@ public sealed class TypingDots : HorizontalStackLayout
         Padding = new Thickness(2, 6);
         for (var i = 0; i < 3; i++)
         {
-            _dots[i] = new BoxView { WidthRequest = 7, HeightRequest = 7, CornerRadius = 3.5, Color = Ui.Muted, Opacity = 0.35 };
+            _dots[i] = new BoxView { WidthRequest = 7, HeightRequest = 7, CornerRadius = 3.5, Color = Ui.InkText, Opacity = 0.35 };
             Children.Add(_dots[i]);
         }
         Loaded += (_, _) =>

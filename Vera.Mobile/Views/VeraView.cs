@@ -36,6 +36,32 @@ public static class SpriteAtlas
     {
         foreach (var n in VeraSprite.AllLayerNames()) Get(n);
     }
+
+    private static readonly Dictionary<string, SKImage?> Frames = new();
+
+    /// <summary>Кадр скина-рисунка: folder "assets/skins/chibi" → ассет "skins/chibi/&lt;pose&gt;.png".</summary>
+    public static SKImage? Frame(string folder, string pose)
+    {
+        var path = folder.Replace("assets/", "") + "/" + pose + ".png";
+        lock (Frames)
+        {
+            if (Frames.TryGetValue(path, out var img)) return img;
+            try
+            {
+                using var s = Android.App.Application.Context.Assets!.Open(path);
+                using var ms = new MemoryStream();
+                s.CopyTo(ms);
+                img = SKImage.FromEncodedData(ms.ToArray());
+            }
+            catch (Exception e)
+            {
+                Android.Util.Log.Warn("Vera", "frame " + path + ": " + e.Message);
+                img = null;
+            }
+            Frames[path] = img;
+            return img;
+        }
+    }
 }
 
 /// <summary>
@@ -103,6 +129,23 @@ public sealed class VeraView : SKCanvasView
         _nextSwing = now + 1200;
         _nextBreath = now + 1400;
     }
+
+    /// <summary>Скин: "vera" (пиксельная, из слоёв) или рисунок ("halo", "chibi").</summary>
+    public string Skin
+    {
+        get => _skin;
+        set
+        {
+            if (_skin == value) return;
+            _skin = value ?? "vera";
+            _frameKey = "";
+            InvalidateSurface();
+        }
+    }
+
+    private string _skin = "vera";
+    private SKImage? _poseImage;
+    private SKRect _poseRect;
 
     /// <summary>dp на один пиксель спрайта.</summary>
     public double Unit { get; }
@@ -245,6 +288,19 @@ public sealed class VeraView : SKCanvasView
         var mode = Mode;
         if (talking && (Mode == PetMode.Idle || Mode == PetMode.Talking)) mode = PetMode.Talking;
 
+        var info = Skins.Get(_skin);
+        if (info.Kind == SkinKind.Frames)
+        {
+            // рисунок: поза по эмоции, рот — сменой кадра, дыхание — лёгким растяжением
+            var pose = Skins.Pose(info.Id, CurrentEmotion, mode, Posture.Bar, false, mouthOpen);
+            var poseKey = (pose.Folder ?? info.Folder) + "/" + pose.Name + (_exhale ? "|x" : "|i");
+            if (poseKey == _frameKey) return;
+            _frameKey = poseKey;
+            _poseImage = SpriteAtlas.Frame(pose.Folder ?? info.Folder, pose.Name);
+            InvalidateSurface();
+            return;
+        }
+        _poseImage = null;
         var frame = VeraSprite.Compose(CurrentEmotion, mode, _blink, mouthOpen, dragging: false, sitting: true, legFrame: _legFrame);
         var key = frame.Key + (_exhale ? "|x" : "|i");
         if (key == _frameKey) return;
@@ -291,12 +347,31 @@ public sealed class VeraView : SKCanvasView
         canvas.Clear(SKColors.Transparent);
         if (_frameKey.Length == 0) Step();
         var (x0, y0, k) = Geometry(e.Info);
+        if (_poseImage is { } pose && Skins.Get(_skin).Kind == SkinKind.Frames)
+        {
+            // рисунок меньше пиксельной Веры: сидит на краю панели, низ чуть заходит на неё
+            var maxH = VeraSprite.SeatLine * k * 0.9f * (_exhale ? 0.988f : 1f);
+            var maxW = W * k * 1.1f;
+            var scale = Math.Min(maxH / pose.Height, maxW / pose.Width);
+            var w = pose.Width * scale;
+            var h = pose.Height * scale;
+            var bottom = (VeraSprite.SeatLine + 4) * k;
+            _poseRect = SKRect.Create(Math.Max(0, (W * k - w) / 2), bottom - h, w, h);
+            canvas.DrawImage(pose, _poseRect, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), null);
+            return;
+        }
         using var img = SKImage.FromBitmap(_frame);
         canvas.DrawImage(img, SKRect.Create(x0, y0, W * k, H * k), new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None), null);
     }
 
     private bool HitSprite(SKPoint p)
     {
+        if (_poseImage is not null && Skins.Get(_skin).Kind == SkinKind.Frames)
+        {
+            var r = _poseRect;
+            r.Inflate(-r.Width * 0.12f, -r.Height * 0.08f);
+            return r.Contains(p);
+        }
         var info = CanvasSize;
         var k = Math.Max(1, Math.Min(PxScale, Math.Min((int)info.Width / W, (int)info.Height / H)));
         var px = (int)Math.Floor(p.X / k);

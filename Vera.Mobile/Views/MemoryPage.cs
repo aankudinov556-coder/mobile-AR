@@ -24,7 +24,7 @@ public sealed class MemoryPage : ContentPage
             ColumnSpacing = 8,
         };
         addRow.Add(Ui.Box(_text), 0);
-        var addBtn = new ImageButton { Source = "ic_plus.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 12, Padding = new Thickness(11), Background = Ui.AccentGradient };
+        var addBtn = new ImageButton { Source = "ic_plus_dark.png", WidthRequest = 44, HeightRequest = 44, CornerRadius = 14, Padding = new Thickness(11), BackgroundColor = Ui.Accent, BorderColor = Ui.Ink, BorderWidth = 2.5 };
         addBtn.Clicked += (_, _) => Add();
         addRow.Add(addBtn, 1);
 

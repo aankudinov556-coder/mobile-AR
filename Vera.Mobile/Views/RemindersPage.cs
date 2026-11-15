@@ -1,39 +1,438 @@
+using System.Globalization;
 using Vera.Core;
 using Vera.Mobile.Platform;
 
 namespace Vera.Mobile.Views;
 
-/// <summary>Напоминания: добавить вручную (с быстрыми кнопками), список активных и сработавших, удаление.</summary>
+/// <summary>
+/// Напоминания («Ореол»): группы «Сегодня», «Завтра», дальше по датам; карточка со временем слева
+/// (ближайшее — золотая колонка), тап по карточке — действия; внизу Вера с репликой и «Новое напоминание».
+/// </summary>
 public sealed class RemindersPage : ContentPage
 {
-    private static readonly (string Id, string Label)[] RepeatItems =
-        ReminderService.Repeats.Select(r => (r, ReminderService.RepeatLabel(r))).ToArray();
+    private static readonly CultureInfo Ru = new("ru-RU");
 
     private VeraCore Core => App.Core;
-    private readonly Entry _text;
-    private readonly DatePicker _date;
-    private readonly TimePicker _time;
-    private readonly Picker _repeat;
-    private readonly VerticalStackLayout _active = new() { Spacing = 8 };
-    private readonly VerticalStackLayout _done = new() { Spacing = 8, IsVisible = false };
-    private readonly Label _activeTitle = Ui.Label("Активные", 15, Ui.Text, bold: true);
-    private readonly Button _doneToggle;
+    private readonly VerticalStackLayout _list = new() { Spacing = 12, Padding = new Thickness(16, 6, 16, 12) };
     private readonly VerticalStackLayout _warnings = new() { Spacing = 8 };
+    private readonly Image _veraArt;
+    private readonly Label _veraSays;
+    private string _veraPose = "";
+    private bool _showDone;
     private IDispatcherTimer? _timer;
 
     public RemindersPage()
     {
         Ui.StylePage(this, "Напоминания");
+        NavigationPage.SetHasNavigationBar(this, false);
+
+        // Вера внизу: чиби сердится, если что-то пропущено, иначе машет; рядом — белый комикс-пузырь
+        _veraArt = new Image { WidthRequest = 110, HeightRequest = 110, Aspect = Aspect.AspectFit, VerticalOptions = LayoutOptions.End };
+        _veraSays = new Label { FontSize = 14, TextColor = Ui.InkText, LineBreakMode = LineBreakMode.WordWrap };
+        var bubble = new Border
+        {
+            BackgroundColor = Ui.Paper,
+            Stroke = Ui.Ink,
+            StrokeThickness = 2.5,
+            StrokeShape = Ui.Round(18, 18, 6, 18),
+            Padding = new Thickness(14, 11),
+            Shadow = Ui.HardShadow(3),
+            Margin = new Thickness(0, 0, 3, 30),
+            VerticalOptions = LayoutOptions.End,
+            Content = _veraSays,
+        };
+        var veraRow = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(new GridLength(110)), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 10,
+        };
+        veraRow.Add(_veraArt, 0);
+        veraRow.Add(bubble, 1);
+
+        var add = Ui.Primary("Новое напоминание", async (_, _) => await EditAsync(null));
+        add.CornerRadius = 16;
+        add.MinimumHeightRequest = 52;
+        add.Shadow = Ui.HardShadow(4);
+        add.Margin = new Thickness(0, 0, 4, 4);
+
+        var root = new Grid
+        {
+            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) },
+            BackgroundColor = Ui.Bg,
+        };
+        root.Add(Ui.PageHeader(this, "Напоминания"), 0, 0);
+        root.Add(new ScrollView { Content = _list }, 0, 1);
+        root.Add(new VerticalStackLayout { Spacing = 12, Padding = new Thickness(16, 4, 16, 16), Children = { veraRow, add } }, 0, 2);
+        Content = root;
+    }
+
+    private void OnChanged() => MainThread.BeginInvokeOnMainThread(Render);
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        Core.Reminders.Changed += OnChanged;
+        RenderWarnings();
+        Render();
+        _timer = Dispatcher.CreateTimer();
+        _timer.Interval = TimeSpan.FromSeconds(30);
+        _timer.Tick += (_, _) => Render();
+        _timer.Start();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        Core.Reminders.Changed -= OnChanged;
+        _timer?.Stop();
+        _timer = null;
+    }
+
+    private async Task EditAsync(Reminder? r)
+    {
+        try { await Navigation.PushAsync(new ReminderEditPage(r)); } catch { }
+    }
+
+    internal static async Task EnsureNotificationPermissionAsync()
+    {
+        if (Android.OS.Build.VERSION.SdkInt < Android.OS.BuildVersionCodes.Tiramisu) return;
+        try
+        {
+            if (await Permissions.CheckStatusAsync<Permissions.PostNotifications>() != PermissionStatus.Granted)
+                await Permissions.RequestAsync<Permissions.PostNotifications>();
+        }
+        catch { }
+    }
+
+    private void RenderWarnings()
+    {
+        _warnings.Children.Clear();
+        if (!ReminderNotifier.Enabled())
+        {
+            _warnings.Children.Add(WarningCard("Уведомления выключены — когда приложение закрыто, Вера не сможет напомнить.",
+                "Разрешить", () => PermissionsUi.OpenNotificationSettings()));
+        }
+        if (!ReminderScheduler.CanScheduleExact())
+        {
+            _warnings.Children.Add(WarningCard("Нет разрешения на точные будильники — напоминания могут приходить с опозданием.",
+                "Разрешить", () => PermissionsUi.OpenExactAlarmSettings()));
+        }
+        _warnings.IsVisible = _warnings.Children.Count > 0;
+    }
+
+    private static Border WarningCard(string text, string button, Action action)
+    {
+        var b = Ui.Ghost(button, (_, _) => action(), Ui.Warn);
+        b.HorizontalOptions = LayoutOptions.Start;
+        return new Border
+        {
+            BackgroundColor = Ui.Warn.WithAlpha(0.10f),
+            Stroke = Ui.Warn.WithAlpha(0.35f),
+            StrokeThickness = 1,
+            StrokeShape = Ui.Round(14),
+            Padding = new Thickness(14, 10),
+            Content = new VerticalStackLayout { Spacing = 8, Children = { Ui.Label(text, 14, Ui.Text), b } },
+        };
+    }
+
+    private static string Short(string s, int n) => s.Length > n ? s[..(n - 1)].TrimEnd() + "…" : s;
+
+    /// <summary>Сработало с опозданием (приложение было закрыто) в последние сутки — или висит просроченным.</summary>
+    private static Reminder? Missed(IReadOnlyList<Reminder> all, DateTimeOffset now) =>
+        all.Where(r => r.Done && r.FiredAt is { } f && f - r.Due > TimeSpan.FromMinutes(2) && now - f < TimeSpan.FromHours(24))
+            .OrderByDescending(r => r.FiredAt)
+            .FirstOrDefault()
+        ?? all.FirstOrDefault(r => !r.Done && now - r.Due > TimeSpan.FromMinutes(2));
+
+    private static string GroupName(DateTimeOffset due, DateTimeOffset now)
+    {
+        var d = due.LocalDateTime.Date;
+        var today = now.LocalDateTime.Date;
+        if (d < today) return "Просрочено";
+        if (d == today) return "Сегодня";
+        if (d == today.AddDays(1)) return "Завтра";
+        return d.ToString(d.Year == today.Year ? "dddd, d MMMM" : "d MMMM yyyy", Ru);
+    }
+
+    private void Render()
+    {
+        var now = DateTimeOffset.Now;
+        var all = Core.Reminders.List();
+        var active = all.Where(r => !r.Done).OrderBy(r => r.Due).ToList();
+        var done = all.Where(r => r.Done).OrderByDescending(r => r.FiredAt ?? r.Due).ToList();
+        var next = active.FirstOrDefault(r => r.Due >= now) ?? active.FirstOrDefault();
+        var me = Core.Sync.DeviceId;
+        var peers = Core.Sync.Peers;
+        string? ring = null;
+        if (peers.Count > 0)
+        {
+            ring = Core.Settings.Current.Sync.RingOn switch
+            {
+                "active" => "звенит там, где ты",
+                "pc" => "звенит на ПК",
+                "phone" => "звенит на телефоне",
+                _ => "звенит на обоих",
+            };
+        }
+
+        _list.Children.Clear();
+        if (_warnings.IsVisible) _list.Children.Add(_warnings);
+        if (active.Count == 0)
+            _list.Children.Add(new Label { Text = "Активных напоминаний нет.", FontSize = 14, TextColor = Ui.Muted, Margin = new Thickness(0, 8, 0, 0) });
+
+        string? group = null;
+        foreach (var r in active)
+        {
+            var g = GroupName(r.Due, now);
+            if (g != group)
+            {
+                var caps = Ui.Caps(g);
+                if (group is not null) caps.Margin = new Thickness(0, 8, 0, 0);
+                _list.Children.Add(caps);
+                group = g;
+            }
+            _list.Children.Add(Row(r, next is not null && r.Id == next.Id, now, me, peers, ring));
+        }
+
+        if (done.Count > 0)
+        {
+            var toggle = new Label
+            {
+                Text = (_showDone ? "▾ " : "▸ ") + $"Сработавшие ({done.Count})".ToUpperInvariant(),
+                FontSize = 12,
+                FontFamily = Ui.FontBold,
+                CharacterSpacing = 1,
+                TextColor = Ui.Faint,
+                Padding = new Thickness(0, 10, 0, 4),
+            };
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += (_, _) => { _showDone = !_showDone; Render(); };
+            toggle.GestureRecognizers.Add(tap);
+            _list.Children.Add(toggle);
+            if (_showDone)
+                foreach (var r in done) _list.Children.Add(Row(r, false, now, me, peers, null));
+        }
+
+        // реплика Веры
+        var missed = Missed(all, now);
+        string pose, say;
+        if (missed is not null)
+        {
+            pose = "angry";
+            var yesterday = missed.Due.LocalDateTime.Date == now.LocalDateTime.Date.AddDays(-1);
+            say = (yesterday ? "Вчера ты проспал" : "Ты проспал") + $" «{Short(missed.Text, 40)}». " +
+                  (peers.Count > 0 ? "Ещё раз — и я начну звенеть на всех устройствах сразу!" : "Ещё раз — и я начну звенеть громче!");
+        }
+        else if (next is not null)
+        {
+            pose = "wave";
+            say = $"Следующее — «{Short(next.Text, 40)}» {RuText.Relative(next.Due)}. Я прослежу~";
+        }
+        else
+        {
+            pose = "wave";
+            say = "Пока пусто. Скажи мне в чате «напомни через 10 минут…» — поставлю сама.";
+        }
+        _veraSays.Text = say;
+        if (pose != _veraPose)
+        {
+            _veraPose = pose;
+            _veraArt.Source = Ui.Asset($"skins/chibi/{pose}.png");
+        }
+    }
+
+    /// <summary>Карточка: слева время и подпись, справа текст и откуда напоминание.</summary>
+    private View Row(Reminder r, bool next, DateTimeOffset now, string me, IReadOnlyList<Vera.Core.Sync.SyncPeer> peers, string? ring)
+    {
+        var local = r.Due.LocalDateTime;
+        var overdue = !r.Done && r.Due < now.AddMinutes(-1);
+        string sub;
+        if (r.Done) sub = "сработало";
+        else if (overdue) sub = "просрочено";
+        else if (r.Repeat != "none" && !next) sub = r.RepeatText;
+        else if (next || local.Date == now.LocalDateTime.Date) sub = RuText.Relative(r.Due);
+        else sub = local.ToString("ddd", Ru);
+
+        var time = new Label
+        {
+            Text = local.ToString("HH:mm", CultureInfo.InvariantCulture),
+            FontSize = 18,
+            FontFamily = Ui.Display,
+            TextColor = next ? Ui.OnAccent : Ui.Text,
+            HorizontalTextAlignment = TextAlignment.Center,
+        };
+        var subLabel = new Label
+        {
+            Text = sub,
+            FontSize = 11,
+            FontFamily = Ui.FontBold,
+            TextColor = next ? Ui.OnAccent : overdue ? Ui.Danger : Ui.Muted,
+            HorizontalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.WordWrap,
+            MaxLines = 2,
+        };
+        var left = new Border
+        {
+            BackgroundColor = next ? Ui.Accent : Ui.Surface2,
+            StrokeThickness = 0,
+            StrokeShape = Ui.Round(16, 0, 16, 0),
+            Padding = new Thickness(4, 10),
+            Content = new VerticalStackLayout { Spacing = 1, VerticalOptions = LayoutOptions.Center, Children = { time, subLabel } },
+        };
+        var divider = new BoxView { WidthRequest = next ? 2.5 : 2, Color = next ? Ui.Ink : Ui.Surface3 };
+
+        // подпись справа: повтор (если не показан слева), кто поставил, где создано, где звенит
+        var parts = new List<string>();
+        if (r.Repeat != "none" && (next || r.Done || overdue)) parts.Add(r.RepeatText);
+        if (r.Source == "ai") parts.Add("поставила Вера");
+        else if (r.Source == "snooze") parts.Add("отложено");
+        if (!string.IsNullOrEmpty(r.Dev) && r.Dev != me)
+            parts.Add(peers.FirstOrDefault(p => p.Id == r.Dev)?.Platform == "mobile" ? "с другого телефона" : "создано на ПК");
+        if (next && ring is not null) parts.Add(ring);
+        if (r.Done && r.FiredAt is { } f) parts.Add(RuText.WhenShort(f));
+        if (parts.Count == 0) parts.Add(r.Repeat == "none" ? "однократно" : "повторяется");
+
+        var right = new VerticalStackLayout
+        {
+            Spacing = 4,
+            Padding = new Thickness(14, 12),
+            VerticalOptions = LayoutOptions.Center,
+            Children =
+            {
+                new Label
+                {
+                    Text = r.Text,
+                    FontSize = 15,
+                    FontFamily = Ui.FontBold,
+                    TextColor = r.Done ? Ui.Muted : Ui.Text,
+                    TextDecorations = r.Done ? TextDecorations.Strikethrough : TextDecorations.None,
+                    LineBreakMode = LineBreakMode.WordWrap,
+                },
+                new Label { Text = string.Join(" · ", parts), FontSize = 12, TextColor = Ui.Muted, LineBreakMode = LineBreakMode.WordWrap },
+            },
+        };
+
+        var g = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(new GridLength(78)), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star),
+            },
+        };
+        g.Add(left, 0);
+        g.Add(divider, 1);
+        g.Add(right, 2);
+
+        // ближайшее — чёрная обводка и жёсткая тень, остальные — тихая рамка
+        var card = new Border
+        {
+            BackgroundColor = Ui.Surface,
+            Stroke = next ? Ui.Ink : Ui.Surface3,
+            StrokeThickness = next ? 2.5 : 2,
+            StrokeShape = Ui.Round(18),
+            Padding = new Thickness(0),
+            Margin = next ? new Thickness(0, 0, 3, 3) : new Thickness(0),
+            Opacity = r.Done ? 0.65 : 1,
+            Content = g,
+        };
+        if (next) card.Shadow = Ui.HardShadow(3);
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) => await ActionsAsync(r);
+        card.GestureRecognizers.Add(tap);
+        return card;
+    }
+
+    /// <summary>Действия по тапу: выполнено, отложить, изменить, удалить.</summary>
+    private async Task ActionsAsync(Reminder r)
+    {
+        const string done = "Выполнено", later10 = "Отложить на 10 мин", later60 = "Отложить на час",
+            again = "Напомнить через 10 мин", edit = "Изменить", delete = "Удалить";
+        var opts = new List<string>();
+        if (r.Done) opts.Add(again);
+        else
+        {
+            if (r.Repeat == "none") opts.AddRange(new[] { done, later10, later60 });
+        }
+        opts.Add(edit);
+        var choice = await DisplayActionSheetAsync(Short(r.Text, 60), "Отмена", delete, opts.ToArray());
+        try
+        {
+            switch (choice)
+            {
+                case done:
+                    Core.Reminders.Complete(r.Id);
+                    ReminderNotifier.Cancel(r.Id);
+                    Ui.Toast("Отмечено как выполненное");
+                    break;
+                case later10:
+                case later60:
+                {
+                    // отложить — сдвинуть позже от назначенного времени (или от «сейчас», если уже прошло)
+                    var from = r.Due > DateTimeOffset.Now ? r.Due : DateTimeOffset.Now;
+                    var due = from.AddMinutes(choice == later10 ? 10 : 60);
+                    Core.Reminders.Update(r.Id, due: due);
+                    ReminderNotifier.Cancel(r.Id);
+                    Ui.Toast("Перенесено на " + RuText.WhenShort(due));
+                    break;
+                }
+                case again:
+                    Core.Reminders.Snooze(r.Id, 10);
+                    ReminderNotifier.Cancel(r.Id);
+                    Ui.Toast("Напомню через 10 минут");
+                    break;
+                case edit:
+                    await EditAsync(r);
+                    break;
+                case delete:
+                    if (!await DisplayAlertAsync("Удалить напоминание?", r.Text, "Удалить", "Отмена")) return;
+                    Core.Reminders.Remove(r.Id);
+                    ReminderNotifier.Cancel(r.Id);
+                    break;
+            }
+        }
+        catch (Exception e)
+        {
+            Ui.Toast(e.Message, true);
+        }
+    }
+}
+
+/// <summary>Создание и правка напоминания: текст, дата, время, повтор, быстрые кнопки.</summary>
+public sealed class ReminderEditPage : ContentPage
+{
+    private static readonly (string Id, string Label)[] RepeatItems =
+        ReminderService.Repeats.Select(r => (r, ReminderService.RepeatLabel(r))).ToArray();
+
+    private VeraCore Core => App.Core;
+    private readonly Reminder? _orig;
+    private readonly Entry _text;
+    private readonly DatePicker _date;
+    private readonly TimePicker _time;
+    private readonly Picker _repeat;
+
+    public ReminderEditPage(Reminder? r)
+    {
+        _orig = r;
+        var title = r is null ? "Новое напоминание" : "Изменить";
+        Ui.StylePage(this, title);
+        NavigationPage.SetHasNavigationBar(this, false);
 
         _text = Ui.Entry("О чём напомнить?");
         _text.MaxLength = 300;
         _text.ReturnType = ReturnType.Done;
-        _text.Completed += (_, _) => Add();
+        _text.Completed += async (_, _) => await SaveAsync();
         _date = new DatePicker { TextColor = Ui.Text, FontSize = 15, MinimumDate = DateTime.Today, Format = "d MMM yyyy", BackgroundColor = Colors.Transparent };
         _time = new TimePicker { TextColor = Ui.Text, FontSize = 15, Format = "HH:mm", BackgroundColor = Colors.Transparent };
-        _repeat = Ui.Picker(RepeatItems.Select(r => r.Label), "Повтор");
+        _repeat = Ui.Picker(RepeatItems.Select(x => x.Label), "Повтор");
         _repeat.SelectedIndex = 0;
-        ResetWhen();
+        if (r is null) ResetWhen();
+        else
+        {
+            _text.Text = r.Text;
+            var due = r.Due.LocalDateTime;
+            SetWhen(due < DateTime.Now ? DateTime.Now.AddMinutes(10) : due);
+            _repeat.SelectedIndex = Math.Max(0, Array.FindIndex(RepeatItems, x => x.Id == r.Repeat));
+        }
 
         var quick = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap };
         foreach (var (label, act) in new (string, Func<DateTime>)[]
@@ -58,54 +457,36 @@ public sealed class RemindersPage : ContentPage
         whenRow.Add(Ui.Box(_date), 0);
         whenRow.Add(Ui.Box(_time), 1);
 
-        var addCard = Ui.Card(
-            Ui.H3("Новое напоминание"),
-            Ui.MutedLabel("Или просто скажи Вере: «напомни завтра в 9 позвонить маме» — она поставит сама."),
-            Ui.Box(_text),
-            whenRow,
-            Ui.Box(_repeat),
-            quick,
-            Ui.Primary("＋ Добавить", (_, _) => Add()));
+        var fields = new List<IView>();
+        if (r is null) fields.Add(Ui.MutedLabel("Или просто скажи Вере: «напомни завтра в 9 позвонить маме» — она поставит сама."));
+        fields.Add(Ui.Field("О чём напомнить", Ui.Box(_text)));
+        fields.Add(Ui.Field("Когда", whenRow));
+        fields.Add(quick);
+        fields.Add(Ui.Field("Повтор", Ui.Box(_repeat)));
+        var card = Ui.Card(fields.ToArray());
 
-        _doneToggle = Ui.Ghost("Сработавшие", (_, _) =>
+        var save = Ui.Primary(r is null ? "Добавить" : "Сохранить", async (_, _) => await SaveAsync());
+        save.CornerRadius = 16;
+        save.MinimumHeightRequest = 52;
+        save.Shadow = Ui.HardShadow(4);
+        save.Margin = new Thickness(0, 0, 4, 4);
+
+        var root = new Grid
         {
-            _done.IsVisible = !_done.IsVisible;
-            Render();
-        });
-        _doneToggle.HorizontalOptions = LayoutOptions.Start;
-
-        Content = new ScrollView
+            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star) },
+            BackgroundColor = Ui.Bg,
+        };
+        root.Add(Ui.PageHeader(this, title), 0, 0);
+        root.Add(new ScrollView
         {
             Content = new VerticalStackLayout
             {
                 Spacing = 14,
-                Padding = new Thickness(14, 12, 14, 28),
-                Children = { _warnings, addCard, _activeTitle, _active, _doneToggle, _done },
+                Padding = new Thickness(16, 6, 16, 28),
+                Children = { card, save },
             },
-        };
-
-    }
-
-    private void OnChanged() => MainThread.BeginInvokeOnMainThread(Render);
-
-    protected override void OnAppearing()
-    {
-        base.OnAppearing();
-        Core.Reminders.Changed += OnChanged;
-        Render();
-        RenderWarnings();
-        _timer = Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromSeconds(30);
-        _timer.Tick += (_, _) => Render();
-        _timer.Start();
-    }
-
-    protected override void OnDisappearing()
-    {
-        base.OnDisappearing();
-        Core.Reminders.Changed -= OnChanged;
-        _timer?.Stop();
-        _timer = null;
+        }, 0, 1);
+        Content = root;
     }
 
     private void ResetWhen()
@@ -129,141 +510,60 @@ public sealed class RemindersPage : ContentPage
         return (d ?? DateTime.Today).Date + (t ?? TimeSpan.Zero);
     }
 
-    private void Add()
+    private bool _saving;
+
+    /// <summary>Повторяющееся с прошедшим временем — на ближайший будущий повтор.</summary>
+    private static DateTimeOffset NextFuture(DateTimeOffset t, string repeat)
     {
+        var now = DateTimeOffset.Now;
+        for (var i = 0; i < 2000 && t <= now; i++)
+        {
+            t = repeat switch
+            {
+                "hourly" => t.AddHours(1),
+                "weekly" => t.AddDays(7),
+                "monthly" => t.AddMonths(1),
+                _ => t.AddDays(1),
+            };
+            if (repeat == "weekdays")
+                while (t.LocalDateTime.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) t = t.AddDays(1);
+        }
+        return t;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
         var text = (_text.Text ?? "").Trim();
         if (text.Length == 0) { Ui.Toast("Напиши, о чём напомнить"); _text.Focus(); return; }
-        var when = SelectedWhen();
+        var when = new DateTimeOffset(SelectedWhen());
         var repeat = RepeatItems[Math.Max(0, _repeat.SelectedIndex)].Id;
         try
         {
-            var r = Core.Reminders.Add(text, new DateTimeOffset(when), repeat, "user");
-            _text.Text = "";
-            _text.Unfocus();
-            ResetWhen();
-            _repeat.SelectedIndex = 0;
-            Ui.Toast($"Готово: {r.DueText}");
-            _ = EnsureNotificationPermissionAsync();
+            if (_orig is null)
+            {
+                var r = Core.Reminders.Add(text, when, repeat, "user");
+                Ui.Toast($"Готово: {r.DueText}");
+            }
+            else
+            {
+                if (repeat != "none") when = NextFuture(when, repeat);
+                else if (when <= DateTimeOffset.Now) { Ui.Toast("Это время уже прошло", true); return; }
+                var r = Core.Reminders.Update(_orig.Id, text, when, repeat);
+                if (r is null) { Ui.Toast("Напоминание не найдено — возможно, его удалили", true); return; }
+                ReminderNotifier.Cancel(_orig.Id);
+                Ui.Toast($"Сохранено: {r.DueText}");
+            }
         }
         catch (Exception e)
         {
             Ui.Toast(e.Message, true);
+            return;
         }
-    }
-
-    private static async Task EnsureNotificationPermissionAsync()
-    {
-        if (Android.OS.Build.VERSION.SdkInt < Android.OS.BuildVersionCodes.Tiramisu) return;
-        try
-        {
-            if (await Permissions.CheckStatusAsync<Permissions.PostNotifications>() != PermissionStatus.Granted)
-                await Permissions.RequestAsync<Permissions.PostNotifications>();
-        }
-        catch { }
-    }
-
-    private void RenderWarnings()
-    {
-        _warnings.Children.Clear();
-        if (!ReminderNotifier.Enabled())
-        {
-            _warnings.Children.Add(WarningCard("🔕 Уведомления выключены — когда приложение закрыто, Вера не сможет напомнить.",
-                "Разрешить", () => PermissionsUi.OpenNotificationSettings()));
-        }
-        if (!ReminderScheduler.CanScheduleExact())
-        {
-            _warnings.Children.Add(WarningCard("⏱️ Нет разрешения на точные будильники — напоминания могут приходить с опозданием.",
-                "Разрешить", () => PermissionsUi.OpenExactAlarmSettings()));
-        }
-    }
-
-    private static Border WarningCard(string text, string button, Action action)
-    {
-        var b = Ui.Ghost(button, (_, _) => action(), Ui.Warn);
-        b.HorizontalOptions = LayoutOptions.Start;
-        return new Border
-        {
-            BackgroundColor = Ui.Warn.WithAlpha(0.10f),
-            Stroke = Ui.Warn.WithAlpha(0.35f),
-            StrokeThickness = 1,
-            StrokeShape = Ui.Round(14),
-            Padding = new Thickness(14, 10),
-            Content = new VerticalStackLayout { Spacing = 8, Children = { Ui.Label(text, 14, Ui.Text), b } },
-        };
-    }
-
-    private void Render()
-    {
-        var all = Core.Reminders.List();
-        var active = all.Where(r => !r.Done).ToList();
-        var done = all.Where(r => r.Done).OrderByDescending(r => r.FiredAt ?? r.Due).ToList();
-        _activeTitle.Text = active.Count > 0 ? $"Активные ({active.Count})" : "Активные";
-        _doneToggle.Text = (_done.IsVisible ? "▾ " : "▸ ") + "Сработавшие" + (done.Count > 0 ? $" ({done.Count})" : "");
-
-        _active.Children.Clear();
-        if (active.Count == 0) _active.Children.Add(Ui.MutedLabel("Пусто. Скажи Вере «напомни через 10 минут…» 😉", 14));
-        foreach (var r in active) _active.Children.Add(Item(r));
-
-        _done.Children.Clear();
-        if (done.Count == 0) _done.Children.Add(Ui.MutedLabel("Ничего не срабатывало", 14));
-        foreach (var r in done) _done.Children.Add(Item(r));
-    }
-
-    private View Item(Reminder r)
-    {
-        var soon = !r.Done && r.Due - DateTimeOffset.Now < TimeSpan.FromMinutes(15);
-        var tags = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap };
-        void Tag(string t, Color? bg = null, Color? fg = null)
-        {
-            var tag = Ui.Tag(t, bg, fg);
-            tag.Margin = new Thickness(0, 0, 6, 4);
-            tags.Children.Add(tag);
-        }
-        Tag(RuText.WhenShort(r.Due), soon ? Ui.AccentSoft : null, soon ? Color.FromArgb("#f6c4e0") : Ui.Text);
-        Tag(r.Done ? "сработало" : RuText.Relative(r.Due));
-        if (r.Repeat != "none") Tag("🔁 " + r.RepeatText);
-        if (r.Source == "ai") Tag("от Веры");
-
-        var actions = new HorizontalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center };
-        if (r.Done)
-        {
-            actions.Children.Add(Ui.Icon("ic_clock.png", (_, _) =>
-            {
-                Core.Reminders.Snooze(r.Id, 10);
-                Ui.Toast("Напомню через 10 минут");
-            }, 40, 9));
-        }
-        actions.Children.Add(Ui.Icon("ic_trash.png", async (_, _) =>
-        {
-            if (!await DisplayAlertAsync("Удалить напоминание?", r.Text, "Удалить", "Отмена")) return;
-            Core.Reminders.Remove(r.Id);
-            ReminderNotifier.Cancel(r.Id);
-        }, 40, 9));
-
-        var g = new Grid
-        {
-            ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
-            ColumnSpacing = 6,
-        };
-        g.Add(new VerticalStackLayout
-        {
-            Spacing = 6,
-            Children =
-            {
-                new Label { Text = r.Text, FontSize = 15.5, TextColor = r.Done ? Ui.Muted : Ui.Text, TextDecorations = r.Done ? TextDecorations.Strikethrough : TextDecorations.None },
-                tags,
-            },
-        }, 0);
-        g.Add(actions, 1);
-        return new Border
-        {
-            BackgroundColor = Ui.Surface,
-            Stroke = soon ? Ui.Accent.WithAlpha(0.5f) : Ui.Stroke,
-            StrokeThickness = 1,
-            StrokeShape = Ui.Round(14),
-            Padding = new Thickness(14, 10, 6, 10),
-            Content = g,
-        };
+        _saving = true;
+        _text.Unfocus();
+        _ = RemindersPage.EnsureNotificationPermissionAsync();
+        try { await Navigation.PopAsync(); } catch { }
     }
 }
 

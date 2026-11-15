@@ -66,10 +66,10 @@ public sealed class Notifier
             var b = new ToastContentBuilder()
                 .AddArgument("action", "open")
                 .AddArgument("tab", "reminders")
-                .AddText(missed ? "⏰ Пропущенное напоминание" : "⏰ Вера напоминает")
+                .AddText(L10n.T(missed ? "⏰ Пропущенное напоминание" : "⏰ Вера напоминает"))
                 .AddText(r.Text)
-                .AddButton(new ToastButton().SetContent("Готово ✓").AddArgument("action", "complete").AddArgument("id", r.Id))
-                .AddButton(new ToastButton().SetContent("+10 мин").AddArgument("action", "snooze").AddArgument("id", r.Id))
+                .AddButton(new ToastButton().SetContent(L10n.T("Готово ✓")).AddArgument("action", "complete").AddArgument("id", r.Id))
+                .AddButton(new ToastButton().SetContent(L10n.T("+10 мин")).AddArgument("action", "snooze").AddArgument("id", r.Id))
                 .AddAudio(new ToastAudio { Silent = true })
                 .SetToastScenario(ToastScenario.Reminder);
             if (_logoPath is not null) b.AddAppLogoOverride(new Uri(_logoPath), ToastGenericAppLogoCrop.Circle);

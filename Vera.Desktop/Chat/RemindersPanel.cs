@@ -37,9 +37,9 @@ public sealed class RemindersPanel : Grid
         _host = host;
         _window = window;
 
-        _text = new TextBox { Tag = "О чём напомнить?", MaxLength = 300 };
+        _text = new TextBox { Tag = L10n.T("О чём напомнить?"), MaxLength = 300 };
         _text.KeyDown += (_, e) => { if (e.Key == Key.Enter) Add(); };
-        _when = new TextBox { Tag = "дд.мм.гггг чч:мм", ToolTip = "Например: 13.11.2026 09:30, или просто 18:00" };
+        _when = new TextBox { Tag = L10n.T("дд.мм.гггг чч:мм"), ToolTip = L10n.T("Например: 13.11.2026 09:30, или просто 18:00") };
         _when.KeyDown += (_, e) => { if (e.Key == Key.Enter) Add(); };
         _repeat = Ui.Combo(ReminderService.Repeats.Select(r => (r, ReminderService.RepeatLabel(r))));
         _repeat.SelectedIndex = 0;
@@ -140,7 +140,7 @@ public sealed class RemindersPanel : Grid
             var r = _host.Core.Reminders.Add(text, due.Value, Ui.Selected(_repeat) ?? "none", "user");
             _text.Clear();
             ResetWhen();
-            _window.Toast($"Готово: {r.DueText}");
+            _window.Toast(L10n.F("Готово: {0}", r.DueText));
             Render();
         }
         catch (Exception e)

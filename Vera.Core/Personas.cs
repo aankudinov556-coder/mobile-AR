@@ -120,7 +120,7 @@ public static class Personas
     {
         var set = Lines.TryGetValue(persona, out var s) ? s : Lines[Default];
         if (!set.TryGetValue(kind, out var arr) && !Lines[Default].TryGetValue(kind, out arr)) return "";
-        var line = arr[Random.Shared.Next(arr.Length)];
+        var line = L10n.T(arr[Random.Shared.Next(arr.Length)]);
         return line.Replace("{name}", name).Replace("{text}", text ?? "");
     }
 
@@ -136,7 +136,7 @@ public static class Personas
     public static string BuildSystemPrompt(VeraSettings settings, string memoryText, IReadOnlyCollection<string> toolNames, string platform)
     {
         var persona = Get(settings.Persona);
-        var name = string.IsNullOrWhiteSpace(settings.UserName) ? "семпай" : settings.UserName;
+        var name = string.IsNullOrWhiteSpace(settings.UserName) ? (settings.Language == "en" ? "senpai" : "семпай") : settings.UserName;
 
         var abilities = new List<string>
         {
@@ -156,7 +156,9 @@ public static class Personas
         {
             "Ты — Вера, ИИ-ассистент. " + where + " " + Appearance(settings.Skin),
             persona.Prompt.Replace("{name}", name),
-            $"Обращайся к пользователю «{name}». Говори на языке пользователя (по умолчанию — русский).",
+            settings.Language == "en"
+                ? $"Обращайся к пользователю «{name}». ВАЖНО: интерфейс у пользователя на английском — отвечай по-английски (если пользователь сам пишет на другом языке — на его языке). Характер и манеру речи переноси в английский естественно."
+                : $"Обращайся к пользователю «{name}». Говори на языке пользователя (по умолчанию — русский).",
             "Твои ответы часто озвучиваются голосом, поэтому обычно отвечай коротко и живо: 1–4 предложения. " +
             "Подробно — только если просят или задача требует (код, инструкции). Не используй таблицы без необходимости.",
             "В САМОМ начале каждого ответа ставь ровно один тег эмоции в квадратных скобках из списка: " +

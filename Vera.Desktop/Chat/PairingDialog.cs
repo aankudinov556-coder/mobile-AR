@@ -22,7 +22,7 @@ public static class PairingDialog
         var w = new Window
         {
             Owner = owner,
-            Title = "Привязать телефон",
+            Title = L10n.T("Привязать телефон"),
             Width = 380,
             SizeToContent = SizeToContent.Height,
             ResizeMode = ResizeMode.NoResize,
@@ -61,14 +61,14 @@ public static class PairingDialog
         tick.Tick += (_, _) =>
         {
             var left = offer.Expires - DateTimeOffset.Now;
-            timer.Text = left > TimeSpan.Zero ? $"Код действует ещё {left:mm\\:ss}" : "Код устарел — закрой окно и нажми «Привязать» снова.";
+            timer.Text = left > TimeSpan.Zero ? L10n.F("Код действует ещё {0:mm\\:ss}", left) : L10n.T("Код устарел — закрой окно и нажми «Привязать» снова.");
         };
         tick.Start();
         void OnChanged() => w.Dispatcher.BeginInvoke(() =>
         {
             var added = core.Sync.Peers.FirstOrDefault(p => !before.Contains(p.Id));
             if (added is null) return;
-            done.Text = $"✓ «{added.Name}» привязан! Данные синхронизируются.";
+            done.Text = L10n.F("✓ «{0}» привязан! Данные синхронизируются.", added.Name);
             qrFrame.Opacity = 0.3;
             tick.Stop();
             timer.Text = "";

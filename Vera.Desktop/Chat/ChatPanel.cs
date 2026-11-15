@@ -72,7 +72,7 @@ public sealed class ChatPanel : DockPanel
 
         // ------------------------------------------------------------ composer
         var shot = Ui.IconButton("camera", "Приложить скриншот экрана", AttachScreenshot);
-        var clip = new Button { Style = Ui.Style("Btn.Icon"), Width = 36, Height = 36, Content = Icons.Make("clip", 20), ToolTip = "Приложить файл: PDF, DOCX, TXT, код или картинку (можно перетащить в окно)" };
+        var clip = new Button { Style = Ui.Style("Btn.Icon"), Width = 36, Height = 36, Content = Icons.Make("clip", 20), ToolTip = L10n.T("Приложить файл: PDF, DOCX, TXT, код или картинку (можно перетащить в окно)") };
         clip.Click += (_, _) => PickFiles();
         _input = new TextBox
         {
@@ -81,7 +81,7 @@ public sealed class ChatPanel : DockPanel
             MinHeight = 46,
             MaxHeight = 160,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Tag = "Напиши Вере… (Shift+Enter — новая строка)",
+            Tag = L10n.T("Напиши Вере… (Shift+Enter — новая строка)"),
             Padding = new Thickness(14, 11, 14, 11),
             VerticalContentAlignment = VerticalAlignment.Center,
             FontSize = 15,
@@ -97,7 +97,7 @@ public sealed class ChatPanel : DockPanel
         Ui.SetRadius(_input, new CornerRadius(16));
         _input.PreviewKeyDown += OnInputKey;
         _mic = Ui.IconButton("mic", "Сказать голосом", () => _host.Voice.StartListening(), 46, 20);
-        _send = new Button { Style = Ui.Style("Btn.Send"), Content = Icons.Make("send"), ToolTip = "Отправить" };
+        _send = new Button { Style = Ui.Style("Btn.Send"), Content = Icons.Make("send"), ToolTip = L10n.T("Отправить") };
         _send.Click += (_, _) => Send();
         _clipBtn = clip;
         _shotBtn = shot;
@@ -278,7 +278,7 @@ public sealed class ChatPanel : DockPanel
 
     private static ContextMenu CopyMenu(Func<string> text)
     {
-        var mi = new MenuItem { Header = "Копировать текст" };
+        var mi = new MenuItem { Header = L10n.T("Копировать текст") };
         mi.Click += (_, _) =>
         {
             try { Clipboard.SetText(text()); } catch (Exception) { }
@@ -302,7 +302,7 @@ public sealed class ChatPanel : DockPanel
         var inner = new StackPanel();
         inner.Children.Add(tb);
         if (hasImage && imageB64 is null)
-            inner.Children.Add(new TextBlock { Text = "📎 изображение", FontSize = 11, Opacity = 0.85 }.Res(TextBlock.ForegroundProperty, "UserBubbleFg"));
+            inner.Children.Add(new TextBlock { Text = L10n.T("📎 изображение"), FontSize = 11, Opacity = 0.85 }.Res(TextBlock.ForegroundProperty, "UserBubbleFg"));
         foreach (var d in docs ?? Array.Empty<string>())
             inner.Children.Add(new TextBlock { Text = "📄 " + d, FontSize = 11, Opacity = 0.9, TextTrimming = TextTrimming.CharacterEllipsis }.Res(TextBlock.ForegroundProperty, "UserBubbleFg"));
         var bubble = new Border
@@ -659,7 +659,7 @@ public sealed class ChatPanel : DockPanel
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, -6, -6, 0),
-                ToolTip = "Убрать",
+                ToolTip = L10n.T("Убрать"),
             };
             rm.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "Err");
             Ui.SetRadius(rm, new CornerRadius(10));
@@ -675,10 +675,10 @@ public sealed class ChatPanel : DockPanel
         {
             var idx = i;
             var d = _docs[i];
-            var label = "📄 " + d.Name + (d.Pages > 0 ? $" · {d.Pages} стр." : "") + $" · {d.Text.Length / 1000.0:0.#} тыс. симв.";
+            var label = "📄 " + d.Name + (d.Pages > 0 ? L10n.F(" · {0} стр.", d.Pages) : "") + L10n.F(" · {0:0.#} тыс. симв.", d.Text.Length / 1000.0);
             var text = new TextBlock { Text = label, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 300, TextTrimming = TextTrimming.CharacterEllipsis };
             text.SetResourceReference(TextBlock.ForegroundProperty, "Fg");
-            var rm = new Button { Style = Ui.Style("Btn.Base"), Width = 18, Height = 18, Padding = new Thickness(0), Content = Icons.Make("x", 11), Margin = new Thickness(6, 0, 0, 0), ToolTip = "Убрать" };
+            var rm = new Button { Style = Ui.Style("Btn.Base"), Width = 18, Height = 18, Padding = new Thickness(0), Content = Icons.Make("x", 11), Margin = new Thickness(6, 0, 0, 0), ToolTip = L10n.T("Убрать") };
             rm.Click += (_, _) =>
             {
                 if (idx < _docs.Count) _docs.RemoveAt(idx);
@@ -698,7 +698,7 @@ public sealed class ChatPanel : DockPanel
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
             Multiselect = true,
-            Title = "Что показать Вере?",
+            Title = L10n.T("Что показать Вере?"),
             Filter = "Документы и картинки|*.pdf;*.docx;*.txt;*.md;*.csv;*.json;*.xml;*.html;*.htm;*.rtf;*.log;*.py;*.cs;*.js;*.ts;*.java;*.cpp;*.c;*.h;*.sql;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|Все файлы|*.*",
         };
         if (dlg.ShowDialog(_window) == true) AddFiles(dlg.FileNames);
@@ -712,7 +712,7 @@ public sealed class ChatPanel : DockPanel
             var name = System.IO.Path.GetFileName(path);
             try
             {
-                if (new FileInfo(path).Length > DocumentReader.MaxBytes) throw new ArgumentException($"«{name}» больше 50 МБ.");
+                if (new FileInfo(path).Length > DocumentReader.MaxBytes) throw new ArgumentException(L10n.F("«{0}» больше 50 МБ.", name));
                 if (DocumentReader.IsImage(name))
                 {
                     var bytes = await File.ReadAllBytesAsync(path);
@@ -726,19 +726,19 @@ public sealed class ChatPanel : DockPanel
                 }
                 else if (DocumentReader.IsSupported(name))
                 {
-                    _status.Text = "Читаю " + name + "…";
+                    _status.Text = L10n.T("Читаю ") + name + "…";
                     _status.Visibility = Visibility.Visible;
                     var bytes = await File.ReadAllBytesAsync(path);
                     var doc = await System.Threading.Tasks.Task.Run(() => DocumentReader.Read(bytes, name));
                     if (string.IsNullOrWhiteSpace(doc.Text))
-                        throw new ArgumentException($"В «{name}» не нашлось текста (скан без распознавания?). Пришли его картинкой.");
+                        throw new ArgumentException(L10n.F("В «{0}» не нашлось текста (скан без распознавания?). Пришли его картинкой.", name));
                     _docs.Add(doc);
                 }
-                else throw new ArgumentException($"«{name}»: такой формат пока не читаю. Подойдут PDF, DOCX, TXT/MD/CSV, код и картинки.");
+                else throw new ArgumentException(L10n.F("«{0}»: такой формат пока не читаю. Подойдут PDF, DOCX, TXT/MD/CSV, код и картинки.", name));
             }
             catch (Exception e)
             {
-                _window.Toast(e is ArgumentException ? e.Message : $"Не удалось прочитать «{name}»: {e.Message}", true);
+                _window.Toast(e is ArgumentException ? e.Message : L10n.F("Не удалось прочитать «{0}»: {1}", name, e.Message), true);
             }
         }
         SetStatus(_statusText);
@@ -752,7 +752,7 @@ public sealed class ChatPanel : DockPanel
     public void SetStatus(string? text)
     {
         _statusText = text;
-        _status.Text = text ?? "";
+        _status.Text = L10n.T(text);
         _status.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
@@ -764,7 +764,7 @@ public sealed class ChatPanel : DockPanel
             _attachments.Clear();
             _attachments.Add(new ImageData(ScreenShot.Mime, shot.Base64));
             RenderAttachments();
-            if (_input.Text.Trim().Length == 0) _input.Text = "Что у меня на экране?";
+            if (_input.Text.Trim().Length == 0) _input.Text = L10n.T("Что у меня на экране?");
             _input.CaretIndex = _input.Text.Length;
             FocusInput();
         }
@@ -788,7 +788,7 @@ public sealed class ChatPanel : DockPanel
         if (!core.ProviderReady)
         {
             var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == provider).Title ?? provider;
-            _window.Toast($"Сначала добавь ключ {title} в настройках", true);
+            _window.Toast(L10n.F("Сначала добавь ключ {0} в настройках", title), true);
             _window.ShowTab("settings");
             return;
         }

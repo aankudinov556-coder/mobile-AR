@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
+using Vera.Core;
+
 namespace Vera.Desktop.UI;
 
 /// <summary>Окно подтверждения в стиле приложения (вместо системного MessageBox).</summary>
@@ -11,7 +13,7 @@ public sealed class ConfirmDialog : Window
 {
     private ConfirmDialog(string title, string message, string? detail, string okText, string cancelText, bool danger)
     {
-        Title = "Вера";
+        Title = L10n.T("Вера");
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.WidthAndHeight;
@@ -76,7 +78,7 @@ public sealed class ConfirmDialog : Window
     public static bool Ask(Window? owner, string title, string message, string? detail = null,
         string okText = "Да", string cancelText = "Отмена", bool danger = false)
     {
-        var d = new ConfirmDialog(title, message, detail, okText, cancelText, danger);
+        var d = new ConfirmDialog(L10n.T(title), L10n.T(message), detail, L10n.T(okText), L10n.T(cancelText), danger);
         if (owner is { IsVisible: true })
         {
             d.Owner = owner;

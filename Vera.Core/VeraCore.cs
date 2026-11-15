@@ -20,6 +20,7 @@ public sealed class VeraCore : IDisposable
         Http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         Http.DefaultRequestHeaders.UserAgent.ParseAdd("VeraAssistant/2.0");
         Settings = new SettingsService(storage);
+        L10n.Lang = Settings.Current.Language == "en" ? "en" : "ru";
         Secrets = new SecretsService(secrets);
         Reminders = new ReminderService(storage);
         Memory = new MemoryService(storage);
@@ -49,7 +50,7 @@ public sealed class VeraCore : IDisposable
     /// <summary>Синхронизация с другими устройствами (ПК — сервер, телефон — клиент).</summary>
     public Sync.SyncService Sync { get; }
 
-    private string UserName => string.IsNullOrWhiteSpace(Settings.Current.UserName) ? "семпай" : Settings.Current.UserName;
+    private string UserName => string.IsNullOrWhiteSpace(Settings.Current.UserName) ? L10n.T("семпай") : Settings.Current.UserName;
 
     /// <summary>Готовая реплика характера: "poke", "drag", "idle", "listening", "notHeard", "reminder", "missed", …</summary>
     public string Line(string kind, string? text = null) => Personas.Line(Settings.Current.Persona, kind, UserName, text);

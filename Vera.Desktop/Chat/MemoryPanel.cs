@@ -23,7 +23,7 @@ public sealed class MemoryPanel : Grid
         _host = host;
         _window = window;
 
-        _new = new TextBox { Tag = "Например: Меня зовут Артём, я учусь на программиста", MaxLength = 400 };
+        _new = new TextBox { Tag = L10n.T("Например: Меня зовут Артём, я учусь на программиста"), MaxLength = 400 };
         _new.KeyDown += (_, e) => { if (e.Key == Key.Enter) Add(); };
         var addBtn = Ui.Button(null, "Btn.Primary", "plus", Add, "Добавить");
         addBtn.Padding = new Thickness(10, 8, 10, 8);

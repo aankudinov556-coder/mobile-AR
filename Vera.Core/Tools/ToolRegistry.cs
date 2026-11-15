@@ -239,7 +239,7 @@ public sealed class ToolRegistry
         city = (city ?? "").Trim();
         if (city.Length == 0) return null;
         var geo = JsonNode.Parse(await _http.GetStringAsync(
-            $"https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name={Uri.EscapeDataString(city)}", ct).ConfigureAwait(false));
+            $"https://geocoding-api.open-meteo.com/v1/search?count=1&language={(L10n.English ? "en" : "ru")}&name={Uri.EscapeDataString(city)}", ct).ConfigureAwait(false));
         var place = geo?["results"]?[0];
         if (place is null) return null;
         var lat = place["latitude"]!.GetValue<double>().ToString(CultureInfo.InvariantCulture);
@@ -254,7 +254,7 @@ public sealed class ToolRegistry
         var code = c["weather_code"]?.GetValue<int>() ?? 0;
         var d = w["daily"];
         return new WeatherNow(place["name"]?.GetValue<string>() ?? city, R(c["temperature_2m"]),
-            Wmo.TryGetValue(code, out var desc) ? desc : "", R(c["wind_speed_10m"]),
+            Wmo.TryGetValue(code, out var desc) ? L10n.T(desc) : "", R(c["wind_speed_10m"]),
             R(d?["temperature_2m_min"]?[0]), R(d?["temperature_2m_max"]?[0]), d?["precipitation_probability_max"]?[0]?.GetValue<int>());
     }
 
@@ -263,7 +263,7 @@ public sealed class ToolRegistry
         city = city.Trim();
         if (city.Length == 0) return ToolResult.Error("Не указан город", "🌦️ погода");
         var geo = JsonNode.Parse(await _http.GetStringAsync(
-            $"https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name={Uri.EscapeDataString(city)}", ct).ConfigureAwait(false));
+            $"https://geocoding-api.open-meteo.com/v1/search?count=1&language={(L10n.English ? "en" : "ru")}&name={Uri.EscapeDataString(city)}", ct).ConfigureAwait(false));
         var place = geo?["results"]?[0];
         if (place is null) return ToolResult.Error($"Город «{city}» не найден.", "🌦️ город не найден");
         var lat = place["latitude"]!.GetValue<double>().ToString(CultureInfo.InvariantCulture);

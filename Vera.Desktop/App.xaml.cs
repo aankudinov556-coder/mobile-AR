@@ -18,7 +18,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        _single = SingleInstance.TryAcquire();
+        // после смены языка новая копия ждёт, пока старая закроется
+        var restarted = e.Args.Any(a => a.Equals("--restarted", StringComparison.OrdinalIgnoreCase));
+        _single = SingleInstance.TryAcquire(restarted ? 15000 : 0);
         if (_single is null)
         {
             // Вера уже запущена — ей отправлен сигнал показать чат
@@ -44,7 +46,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("startup", ex);
-            MessageBox.Show("Вера не смогла запуститься:\n\n" + ex.Message, "Вера", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Vera.Core.L10n.T("Вера не смогла запуститься:") + "\n\n" + ex.Message, Vera.Core.L10n.T("Вера"), MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
         }
     }

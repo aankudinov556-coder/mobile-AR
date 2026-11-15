@@ -1,3 +1,4 @@
+using Vera.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -156,13 +157,13 @@ public sealed class HotkeyManager : IDisposable
             if (string.IsNullOrWhiteSpace(accel)) continue;
             if (!Accelerator.TryParse(accel, out var mods, out var vk))
             {
-                errors.Add($"{Accelerator.Pretty(accel)} — неверный формат");
+                errors.Add(L10n.F("{0} — неверный формат", Accelerator.Pretty(accel)));
                 continue;
             }
             var id = _nextId++;
             if (!Native.RegisterHotKey(_source.Handle, id, mods | Native.MOD_NOREPEAT, vk))
             {
-                errors.Add($"{Accelerator.Pretty(accel)} — занято другой программой");
+                errors.Add(L10n.F("{0} — занято другой программой", Accelerator.Pretty(accel)));
                 continue;
             }
             _actions[id] = action;

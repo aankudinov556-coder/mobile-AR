@@ -35,6 +35,6 @@ public sealed record HardwareInfo(double RamGB, int Cores, bool Avx2, bool Avx51
     public string Describe()
     {
         var gpu = HasNvidia ? "видеокарта NVIDIA" : HasVulkan ? "видеокарта с Vulkan" : "видеокарта не найдена";
-        return $"{RamGB:0.#} ГБ памяти · {Cores} потоков · {(Avx2 ? "AVX2" : "без AVX2")} · {gpu}";
+        return Vera.Core.L10n.F("{0:0.#} ГБ памяти · {1} потоков · {2} · {3}", RamGB, Cores, Avx2 ? "AVX2" : Vera.Core.L10n.T("без AVX2"), Vera.Core.L10n.T(gpu));
     }
 }

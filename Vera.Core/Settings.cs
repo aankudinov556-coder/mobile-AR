@@ -114,6 +114,9 @@ public sealed class VeraSettings
     public LocalModelSettings Local { get; set; } = new();
     public DiagnosticsSettings Diagnostics { get; set; } = new();
     /// <summary>Синхронизация с телефоном.</summary>
+    /// <summary>Язык интерфейса и ответов: "ru" | "en".</summary>
+    /// <summary>"ru" | "en"; пусто — выбрать при первом запуске (новая установка — по языку системы, старая — русский).</summary>
+    public string Language { get; set; } = "";
     /// <summary>Город для погоды на главном экране и в утренней сводке.</summary>
     public string City { get; set; } = "";
     public SyncSettings Sync { get; set; } = new();
@@ -277,7 +280,14 @@ public sealed class SettingsService
 
     public SettingsService(IVeraStorage storage)
     {
+        var existed = !string.IsNullOrWhiteSpace(storage.ReadText("settings.json"));
         _file = new JsonFile<VeraSettings>(storage, "settings.json", () => new VeraSettings());
+        // v2.4.1: язык интерфейса. У тех, кто уже пользовался Верой, остаётся русский
+        if (_file.Data.Language is not ("ru" or "en"))
+        {
+            _file.Data.Language = existed ? "ru" : L10n.SystemDefault();
+            if (existed) _file.Save();
+        }
         // новые провайдеры по умолчанию, если в старом файле их нет
         foreach (var p in new[] { "openrouter", "anthropic", "openai", "custom", "local" })
             if (!_file.Data.Models.ContainsKey(p)) _file.Data.Models[p] = VeraSettings.DefaultModel(p);

@@ -91,7 +91,7 @@ public sealed class ReminderService : IDisposable
     /// <summary>Пора напомнить. bool — «пропущенное» (сработало с опозданием, например после включения ПК).</summary>
     public event Action<Reminder, bool>? Due;
 
-    public static string RepeatLabel(string repeat) => repeat switch
+    public static string RepeatLabel(string repeat) => L10n.T(repeat switch
     {
         "hourly" => "каждый час",
         "daily" => "каждый день",
@@ -99,7 +99,7 @@ public sealed class ReminderService : IDisposable
         "weekly" => "каждую неделю",
         "monthly" => "каждый месяц",
         _ => "однократно",
-    };
+    });
 
     private static DateTimeOffset? StepOnce(DateTimeOffset t, string repeat)
     {

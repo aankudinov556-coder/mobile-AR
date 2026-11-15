@@ -74,13 +74,13 @@ public sealed partial class SettingsPanel
     /// <summary>Шапка раздела (заголовок + пояснение) и, на узком окне, поиск и «пилюли» разделов.</summary>
     private UIElement NavBar()
     {
-        _search = new TextBox { Tag = "Найти: голос, ключ, модель…" };
+        _search = new TextBox { Tag = L10n.T("Найти: голос, ключ, модель…") };
         _search.TextChanged += (_, _) => ApplyFilter();
         var chips = _chipRow;
         chips.Margin = new Thickness(0, 8, 0, 0);
         foreach (var sec in Sections)
         {
-            var b = new Button { Content = sec.Title, Style = Ui.Style("Btn.Chip"), Margin = new Thickness(0, 0, 6, 6) };
+            var b = new Button { Content = L10n.T(sec.Title), Style = Ui.Style("Btn.Chip"), Margin = new Thickness(0, 0, 6, 6) };
             var id = sec.Id;
             b.Click += (_, _) => ShowSection(id);
             _sectionButtons[id] = b;
@@ -116,7 +116,7 @@ public sealed partial class SettingsPanel
         foreach (var sec in Sections)
         {
             var id = sec.Id;
-            var rb = new RadioButton { Content = sec.Title, GroupName = "settingsNav", Style = Ui.Style("NavItem"), Margin = new Thickness(0, 0, 0, 4) };
+            var rb = new RadioButton { Content = L10n.T(sec.Title), GroupName = "settingsNav", Style = Ui.Style("NavItem"), Margin = new Thickness(0, 0, 0, 4) };
             rb.Checked += (_, _) => { if (_section != id) ShowSection(id); };
             _navItems[id] = rb;
             sp.Children.Add(rb);
@@ -161,7 +161,7 @@ public sealed partial class SettingsPanel
     private void Comment(string text, string emotion)
     {
         if (_aside is null) return;
-        _asideText.Text = text;
+        _asideText.Text = L10n.T(text);
         var art = SkinArt.Pose(S.Skin, emotion);
         RenderOptions.SetBitmapScalingMode(_asideArt, SkinArt.IsPixel(S.Skin) ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         if (!ReferenceEquals(_asideArt.Source, art)) _asideArt.Source = art;
@@ -243,8 +243,8 @@ public sealed partial class SettingsPanel
         var sec = Sections.First(x => x.Id == _section);
         if (_sectionTitle is not null)
         {
-            _sectionTitle.Text = q.Length > 0 ? "Поиск" : sec.Title;
-            _sectionAbout.Text = q.Length > 0 ? $"Настройки, где есть «{_search!.Text.Trim()}»" : sec.About;
+            _sectionTitle.Text = q.Length > 0 ? L10n.T("Поиск") : L10n.T(sec.Title);
+            _sectionAbout.Text = q.Length > 0 ? L10n.F("Настройки, где есть «{0}»", _search!.Text.Trim()) : L10n.T(sec.About);
         }
         foreach (var (id, rb) in _navItems)
         {
@@ -353,9 +353,9 @@ public sealed partial class SettingsPanel
             pill.Child = Ui.Text(badge.Replace("⭐ ", ""), 11, "OnAccent", FontWeights.Bold, wrap: false);
             title = new StackPanel { Orientation = Orientation.Horizontal, Children = { titleText, pill } };
         }
-        var size = a.SizeMB >= 1000 ? $"{a.SizeMB / 1024.0:0.#} ГБ" : $"{a.SizeMB} МБ";
+        var size = a.SizeMB >= 1000 ? L10n.F("{0:0.#} ГБ", a.SizeMB / 1024.0) : L10n.F("{0} МБ", a.SizeMB);
         var marks = a.Kind == AssetKind.Llm
-            ? $" · память от {a.MinRamGB} ГБ · команды {Stars(a.ToolsQuality)} · русский {Stars(a.RussianQuality)}"
+            ? L10n.F(" · память от {0} ГБ · команды {1} · русский {2}", a.MinRamGB, Stars(a.ToolsQuality), Stars(a.RussianQuality))
             : "";
         var about = Ui.Muted(a.Note, 11.5);
         var info = Ui.Muted(size + marks, 11);
@@ -398,9 +398,9 @@ public sealed partial class SettingsPanel
                 bar.Value = p.Fraction;
                 status.Text = p.Stage == "extract"
                     ? "Распаковываю…"
-                    : $"{p.Done / 1048576.0:0} из {Math.Max(p.Total, 1) / 1048576.0:0} МБ" + (p.BytesPerSecond > 0 ? $" · {p.BytesPerSecond / 1048576.0:0.0} МБ/с" : "");
+                    : L10n.F("{0:0} из {1:0} МБ", p.Done / 1048576.0, Math.Max(p.Total, 1) / 1048576.0) + (p.BytesPerSecond > 0 ? L10n.F(" · {0:0.0} МБ/с", p.BytesPerSecond / 1048576.0) : "");
             }
-            else if (active) status.Text = "Подключаюсь…";
+            else if (active) status.Text = L10n.T("Подключаюсь…");
             else if (installed) status.Text = selected ? "✓ Скачано и выбрано" : "✓ Скачано";
             else if (status.Tag is not string) status.Text = "";
             status.SetResourceReference(TextBlock.ForegroundProperty, installed ? "Ok" : status.Tag is string ? "Err" : "Muted");
@@ -425,12 +425,12 @@ public sealed partial class SettingsPanel
                 Downloads.Remove(a.Id);
                 if (select is not null && isSelected?.Invoke(S) != true && onInstalled is null) Save(select);
                 onInstalled?.Invoke();
-                _window.Toast($"Скачано: {a.Title}");
+                _window.Toast(L10n.F("Скачано: {0}", a.Title));
             }
             catch (OperationCanceledException)
             {
                 Downloads.Remove(a.Id);
-                status.Text = "Отменено — при следующем нажатии докачаю с того же места.";
+                status.Text = L10n.T("Отменено — при следующем нажатии докачаю с того же места.");
             }
             catch (Exception e)
             {
@@ -453,7 +453,7 @@ public sealed partial class SettingsPanel
         remove.Click += (_, _) =>
         {
             if (store is null) return;
-            if (!ConfirmDialog.Ask(_window, "Удалить с диска?", $"«{a.Title}» ({size}) будет удалено. Скачать можно снова в любой момент.", okText: "Удалить", danger: true))
+            if (!ConfirmDialog.Ask(_window, L10n.T("Удалить с диска?"), L10n.F("«{0}» ({1}) будет удалено. Скачать можно снова в любой момент.", a.Title, size), okText: L10n.T("Удалить"), danger: true))
                 return;
             try
             {
@@ -498,7 +498,7 @@ public sealed partial class SettingsPanel
 
         var hw = local.Hardware;
         var rec = ModelCatalog.Get(hw.RecommendedLlm());
-        var hwText = Ui.Muted("Этот ПК: " + hw.Describe() + (rec is null ? "" : $". Рекомендую: {rec.Title}."), 12);
+        var hwText = Ui.Muted(L10n.T("Этот ПК: ") + hw.Describe() + (rec is null ? "" : L10n.F(". Рекомендую: {0}.", rec.Title)), 12);
         hwText.Margin = new Thickness(0, 2, 0, 8);
 
         var llms = new StackPanel();
@@ -522,7 +522,7 @@ public sealed partial class SettingsPanel
         });
         var own = Ui.Button("Свой файл .gguf…", "Btn.Ghost", "folder", () =>
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Модель в формате GGUF", Filter = "GGUF|*.gguf|Все файлы|*.*", CheckFileExists = true };
+            var dlg = new Microsoft.Win32.OpenFileDialog { Title = L10n.T("Модель в формате GGUF"), Filter = "GGUF|*.gguf|Все файлы|*.*", CheckFileExists = true };
             if (dlg.ShowDialog(_window) != true) return;
             var p = dlg.FileName;
             Save(s => { s.Models["local"] = p; s.Local.ModelPath = p; });
@@ -534,7 +534,7 @@ public sealed partial class SettingsPanel
         test.Click += async (_, _) =>
         {
             testStatus.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
-            testStatus.Text = "Загружаю модель и спрашиваю «привет»… (первый раз до минуты)";
+            testStatus.Text = L10n.T("Загружаю модель и спрашиваю «привет»… (первый раз до минуты)");
             test.IsEnabled = false;
             try
             {
@@ -576,7 +576,7 @@ public sealed partial class SettingsPanel
         var gpu = Combo(new[] { ("-1", "Все слои (быстрее всего)"), ("0", "Ни одного (только процессор)"), ("16", "16 слоёв (мало видеопамяти)") },
             s => s.Local.GpuLayers.ToString(CultureInfo.InvariantCulture), (s, v) => s.Local.GpuLayers = int.Parse(v, CultureInfo.InvariantCulture));
         var unload = SliderField("Выгружать из памяти после простоя", 0, 60, 5, s => s.Local.UnloadAfterMinutes,
-            (s, v) => s.Local.UnloadAfterMinutes = (int)Math.Round(v), v => v < 1 ? "никогда" : $"{v:0} мин");
+            (s, v) => s.Local.UnloadAfterMinutes = (int)Math.Round(v), v => v < 1 ? L10n.T("никогда") : L10n.F("{0:0} мин", v));
 
         var fallbackProvider = Combo(new[] { ("openrouter", "OpenRouter"), ("anthropic", "Anthropic"), ("openai", "OpenAI"), ("custom", "Свой сервер") },
             s => s.Local.FallbackProvider, (s, v) => s.Local.FallbackProvider = v);
@@ -584,7 +584,7 @@ public sealed partial class SettingsPanel
         ShowIf(fbSub, s => s.Local.CloudFallback);
 
         var usage = Ui.Muted("", 11.5);
-        _refreshers.Add(() => usage.Text = $"Занято моделями: {local.Store.UsedBytes() / 1073741824.0:0.0} ГБ · {local.Store.Root}");
+        _refreshers.Add(() => usage.Text = L10n.F("Занято моделями: {0:0.0} ГБ · {1}", local.Store.UsedBytes() / 1073741824.0, local.Store.Root));
 
         var advanced = new Expander
         {
@@ -607,8 +607,8 @@ public sealed partial class SettingsPanel
         return Ui.Card(
             Ui.Title("💻 Локальный ИИ — модель прямо на ПК"),
             hwText,
-            Ui.Note("Бесплатно и без интернета: переписка не уходит с компьютера. Маленькие модели глупее облачных — " +
-                    "но с напоминаниями и программами справляются. Первый ответ после запуска медленнее: модель грузится в память."),
+            Ui.Note(L10n.T("Бесплатно и без интернета: переписка не уходит с компьютера. Маленькие модели глупее облачных — ") +
+                    L10n.T("но с напоминаниями и программами справляются. Первый ответ после запуска медленнее: модель грузится в память.")),
             llms,
             current,
             buttons,
@@ -669,12 +669,12 @@ public sealed partial class SettingsPanel
         void Fill()
         {
             static string Line(string head, UsageSummary u) =>
-                $"{head}: {u.Requests} запр. · {u.InputTokens + u.OutputTokens:N0} токенов" +
-                (u.Cost is { } c ? $" · ≈ ${c:0.00}" + (u.CostPartial ? " (цены известны не для всех моделей)" : "") : "");
+                L10n.F("{0}: {1} запр. · {2:N0} токенов", head, u.Requests, u.InputTokens + u.OutputTokens) +
+                (u.Cost is { } c ? $" · ≈ ${c:0.00}" + (u.CostPartial ? L10n.T(" (цены известны не для всех моделей)") : "") : "");
             today.Text = Line("Сегодня", Core.Usage.Today());
             month.Text = Line("В этом месяце", Core.Usage.ThisMonth());
             byProvider.Text = string.Join("\n", Core.Usage.MonthByProvider().Select(p =>
-                $"  {p.Provider}: {p.Sum.InputTokens + p.Sum.OutputTokens:N0} ток." + (p.Sum.Cost is { } c ? $" · ≈ ${c:0.00}" : "")));
+                L10n.F("  {0}: {1:N0} ток.", p.Provider, p.Sum.InputTokens + p.Sum.OutputTokens) + (p.Sum.Cost is { } c ? $" · ≈ ${c:0.00}" : "")));
         }
         _refreshers.Add(Fill);
         Core.Usage.Changed += () => Dispatcher.BeginInvoke(() => { if (IsVisible) Fill(); });
@@ -781,13 +781,13 @@ public sealed partial class SettingsPanel
         {
             if (!S.Sync.Enabled)
             {
-                status.Text = "Выключено — телефон не сможет подключиться.";
+                status.Text = L10n.T("Выключено — телефон не сможет подключиться.");
                 status.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
             }
             else if (host.Running)
             {
                 var ips = Vera.Core.Sync.SyncNet.LocalAddresses();
-                status.Text = $"✓ Жду телефон: {(ips.Count > 0 ? ips[0] : "этот ПК")}, порт {host.Port}" + (host.Error is { } w ? " · " + w : "");
+                status.Text = L10n.F("✓ Жду телефон: {0}, порт {1}", (ips.Count > 0 ? ips[0] : L10n.T("этот ПК")), host.Port) + (host.Error is { } w ? " · " + w : "");
                 status.SetResourceReference(TextBlock.ForegroundProperty, "Ok");
             }
             else
@@ -797,7 +797,7 @@ public sealed partial class SettingsPanel
             }
         });
 
-        var name = new TextBox { Tag = "Имя этого ПК для телефона" };
+        var name = new TextBox { Tag = L10n.T("Имя этого ПК для телефона") };
         _refreshers.Add(() => { if (!name.IsKeyboardFocusWithin) name.Text = Core.Sync.DeviceName; });
         name.LostKeyboardFocus += (_, _) => { if (name.Text.Trim().Length > 0 && name.Text.Trim() != Core.Sync.DeviceName) Core.Sync.DeviceName = name.Text; };
 
@@ -817,7 +817,7 @@ public sealed partial class SettingsPanel
                 body.Children.Add(Ui.Muted(p.LastSync is { } t ? "Синхронизировано " + Vera.Core.RuText.Relative(t) : "Ещё не синхронизировался", 11.5));
                 var rm = Ui.Button("Отвязать", "Btn.GhostSmall", null, () =>
                 {
-                    if (!ConfirmDialog.Ask(_window, "Отвязать телефон?", $"«{peer.Name}» больше не сможет синхронизироваться с этим ПК. Данные на обоих устройствах останутся.",
+                    if (!ConfirmDialog.Ask(_window, L10n.T("Отвязать телефон?"), L10n.F("«{0}» больше не сможет синхронизироваться с этим ПК. Данные на обоих устройствах останутся.", peer.Name),
                             okText: "Отвязать", danger: true)) return;
                     Core.Sync.Unpair(peer.Id);
                 });
@@ -842,8 +842,8 @@ public sealed partial class SettingsPanel
 
         return Ui.Card(
             Ui.Title("📱 Синхронизация с телефоном"),
-            Ui.Muted("Память, напоминания, история чата, характер и скин — одинаковые на ПК и телефоне. Связь только в домашней сети, всё шифруется. " +
-                     "Нужна Вера для Android новой версии — её соберём следующей.", 12),
+            Ui.Muted(L10n.T("Память, напоминания, история чата, характер и скин — одинаковые на ПК и телефоне. Связь только в домашней сети, всё шифруется. ") +
+                     L10n.T("Нужна Вера для Android версии 2.4 или новее."), 12),
             Toggle("Принимать телефон в домашней сети", s => s.Sync.Enabled, (s, v) => s.Sync.Enabled = v,
                 "(Windows один раз спросит разрешение брандмауэра — выбери «Частные сети»)"),
             status,

@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Windows;
 using WinForms = System.Windows.Forms;
 
+using Vera.Core;
+
 namespace Vera.Desktop.Platform;
 
 /// <summary>Пункт меню трея (null-Label — разделитель).</summary>
@@ -30,7 +32,7 @@ public sealed class TrayIcon : IDisposable
         _icon = new WinForms.NotifyIcon
         {
             Icon = LoadIcon(),
-            Text = "Вера — ИИ ассистент",
+            Text = L10n.T("Вера — ИИ ассистент"),
             ContextMenuStrip = _menu,
             Visible = true,
         };
@@ -72,7 +74,7 @@ public sealed class TrayIcon : IDisposable
                 _menu.Items.Add(new WinForms.ToolStripSeparator());
                 continue;
             }
-            var mi = new WinForms.ToolStripMenuItem(it.Label) { Padding = new WinForms.Padding(4, 3, 4, 3) };
+            var mi = new WinForms.ToolStripMenuItem(L10n.T(it.Label)) { Padding = new WinForms.Padding(4, 3, 4, 3) };
             if (it.Checked is { } c) mi.Checked = c;
             var action = it.Click;
             mi.Click += (_, _) => action?.Invoke();
@@ -83,7 +85,7 @@ public sealed class TrayIcon : IDisposable
     /// <summary>Запасной способ уведомить, если toast недоступен.</summary>
     public void Balloon(string title, string text)
     {
-        try { _icon.ShowBalloonTip(8000, title, text, WinForms.ToolTipIcon.Info); }
+        try { _icon.ShowBalloonTip(8000, L10n.T(title), text, WinForms.ToolTipIcon.Info); }
         catch (Exception) { }
     }
 

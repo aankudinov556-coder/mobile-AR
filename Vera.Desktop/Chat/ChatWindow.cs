@@ -53,7 +53,7 @@ public sealed class ChatWindow : Window
     public ChatWindow(AppHost host)
     {
         _host = host;
-        Title = "Вера";
+        Title = L10n.T("Вера");
         Width = 1060;
         Height = 720;
         MinWidth = 420;
@@ -386,7 +386,7 @@ public sealed class ChatWindow : Window
 
     public void Toast(string text, bool error = false)
     {
-        _toastText.Text = text;
+        _toastText.Text = L10n.T(text);
         _toast.SetResourceReference(Border.BackgroundProperty, error ? "ToastErrBg" : "Bg2");
         _toastText.SetResourceReference(TextBlock.ForegroundProperty, error ? "ToastErrFg" : "Fg");
         _toast.Visibility = Visibility.Visible;
@@ -402,7 +402,7 @@ public sealed class ChatWindow : Window
         _badge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         _badgeText.Text = count.ToString();
         if (count > 0 && was != _badgeText.Text) Anim.Pop(_badge);
-        if (_topTabButtons.TryGetValue("reminders", out var rb)) rb.Content = count > 0 ? $"Дела · {count}" : "Дела";
+        if (_topTabButtons.TryGetValue("reminders", out var rb)) rb.Content = count > 0 ? L10n.F("Дела · {0}", count) : L10n.T("Дела");
     }
 
     // ================================================================== status
@@ -414,13 +414,13 @@ public sealed class ChatWindow : Window
         var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
         var model = s.Provider == "local" ? System.IO.Path.GetFileNameWithoutExtension(s.CurrentModel) : s.CurrentModel;
         if (ChatPanel.Busy) _stage.SetStatus(_typing ? "печатает ответ…" : "думает…", true);
-        else if (!core.ProviderReady) _stage.SetStatus($"нет ключа {title}", true);
+        else if (!core.ProviderReady) _stage.SetStatus(L10n.F("нет ключа {0}", L10n.T(title)), true);
         else _stage.SetStatus("", false);
-        var chips = new List<(string, bool)> { ($"{title} · {model}", false) };
+        var chips = new List<(string, bool)> { ($"{L10n.T(title)} · {model}", false) };
         var phone = core.Sync.Peers.Where(p => p.LastSync is not null).OrderByDescending(p => p.LastSync).FirstOrDefault();
         if (phone?.LastSync is { } at)
-            chips.Add(($"{phone.Name} · синхр. {RuText.Relative(at)}", DateTimeOffset.Now - at < TimeSpan.FromMinutes(30)));
-        chips.Add(("Характер: " + Personas.Get(s.Persona).Label, false));
+            chips.Add((L10n.F("{0} · синхр. {1}", phone.Name, RuText.Relative(at)), DateTimeOffset.Now - at < TimeSpan.FromMinutes(30)));
+        chips.Add((L10n.T("Характер: ") + L10n.T(Personas.Get(s.Persona).Label), false));
         _stage.SetChips(chips);
     }
 

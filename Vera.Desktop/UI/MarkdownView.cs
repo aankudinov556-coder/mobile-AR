@@ -8,6 +8,8 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Vera.Core.Markdown;
 
+using Vera.Core;
+
 namespace Vera.Desktop.UI;
 
 /// <summary>Markdown (через MarkdownLite.Parse) → родные элементы WPF.</summary>
@@ -193,7 +195,7 @@ public static class MarkdownView
             grid.Children.Add(l);
         }
 
-        var label = new TextBlock { Text = "Копировать", FontSize = 11 };
+        var label = new TextBlock { Text = L10n.T("Копировать"), FontSize = 11 };
         var copy = new Button
         {
             Content = label,
@@ -212,9 +214,9 @@ public static class MarkdownView
             try
             {
                 Clipboard.SetText(code);
-                label.Text = "Скопировано";
+                label.Text = L10n.T("Скопировано");
                 var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
-                t.Tick += (_, _) => { t.Stop(); label.Text = "Копировать"; };
+                t.Tick += (_, _) => { t.Stop(); label.Text = L10n.T("Копировать"); };
                 t.Start();
             }
             catch (Exception) { }

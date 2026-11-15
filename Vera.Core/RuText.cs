@@ -12,6 +12,7 @@ public static class RuText
     public static string FormatDateTime(DateTimeOffset t)
     {
         var d = t.ToLocalTime();
+        if (L10n.English) return d.ToString("MMMM d, yyyy, HH:mm", CultureInfo.GetCultureInfo("en-US"));
         return $"{d.Day} {Months[d.Month - 1]} {d.Year}, {d:HH\\:mm}";
     }
 
@@ -21,6 +22,12 @@ public static class RuText
         var d = t.ToLocalTime();
         var n = (now ?? DateTimeOffset.Now).ToLocalTime();
         var time = d.ToString("HH:mm", CultureInfo.InvariantCulture);
+        if (L10n.English)
+        {
+            if (d.Date == n.Date) return "today " + time;
+            if (d.Date == n.Date.AddDays(1)) return "tomorrow " + time;
+            return d.ToString("ddd, MMM d", CultureInfo.GetCultureInfo("en-US")) + " " + time;
+        }
         if (d.Date == n.Date) return "сегодня " + time;
         if (d.Date == n.Date.AddDays(1)) return "завтра " + time;
         return d.ToString("ddd, d MMM", new CultureInfo("ru-RU")) + " " + time;
@@ -43,6 +50,15 @@ public static class RuText
         var diff = (long)Math.Round((t - (now ?? DateTimeOffset.Now)).TotalMinutes);
         var past = diff < 0;
         diff = Math.Abs(diff);
+        if (L10n.English)
+        {
+            string e;
+            if (diff < 1) e = "less than a minute";
+            else if (diff < 60) e = $"{diff} min";
+            else if (diff < 60 * 24) { var eh = diff / 60; var em = diff % 60; e = $"{eh} h" + (em > 0 ? $" {em} min" : ""); }
+            else { var ed = diff / 1440; var eh = diff % 1440 / 60; e = $"{ed} {(ed == 1 ? "day" : "days")}" + (eh > 0 ? $" {eh} h" : ""); }
+            return past ? e + " ago" : "in " + e;
+        }
         string s;
         if (diff < 1) s = "меньше минуты";
         else if (diff < 60) s = $"{diff} мин";

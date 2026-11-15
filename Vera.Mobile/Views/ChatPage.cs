@@ -5,6 +5,7 @@ using Vera.Core.Documents;
 using Vera.Core.Providers;
 using Vera.Core.Speech;
 using Vera.Core.Sprites;
+using Vera.Core.Tools;
 using Vera.Mobile.Platform;
 using Vera.Mobile.Services;
 
@@ -13,6 +14,7 @@ namespace Vera.Mobile.Views;
 /// <summary>
 /// Главный экран: чат-мессенджер. Вера сидит на верхнем краю панели ввода, ноги свисают поверх панели;
 /// над ней — зарезервированная «сцена» с облачком, сообщения идут выше и Верой не перекрываются.
+/// В начале переписки за день — карточка «утро · сводка» (погода и напоминания на сегодня).
 /// </summary>
 public sealed class ChatPage : ContentPage
 {
@@ -39,6 +41,7 @@ public sealed class ChatPage : ContentPage
 
     // UI
     private readonly Label _status;
+    private readonly BoxView _statusDot;
     private readonly ScrollView _scroll;
     private readonly VerticalStackLayout _list;
     private readonly View _empty;
@@ -50,12 +53,25 @@ public sealed class ChatPage : ContentPage
     private readonly HorizontalStackLayout _levelBars;
     private readonly AbsoluteLayout _fx;
     private readonly Editor _input;
+    /// <summary>Золотая кнопка справа: микрофон / отправить / стоп.</summary>
     private readonly ImageButton _sendBtn;
-    private readonly ImageButton _micBtn;
     private readonly Border _attachBox;
     private readonly Image _attachImage;
     private readonly Border _remBadge;
     private readonly Label _remBadgeText;
+
+    // сводка дня
+    private readonly VerticalStackLayout _summary;
+    private Label _sumCaption = null!;
+    private Grid _sumWeather = null!;
+    private Label _sumTemp = null!;
+    private Label _sumDesc = null!;
+    private FlexLayout _sumPills = null!;
+    private Label _sumNoPills = null!;
+    private static WeatherNow? _weather;
+    private static string? _weatherCity;
+    private static long _weatherAt;
+    private static bool _weatherLoading;
 
     // состояние
     private readonly Dictionary<string, LiveTurn> _live = new();
@@ -92,47 +108,79 @@ public sealed class ChatPage : ContentPage
         const double veraLeft = 4;
 
         // ------------------------------------------------ шапка
-        _status = new Label { FontSize = 12.5, TextColor = Ui.Muted, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1 };
+        // «Вера» шрифтом Unbounded, под ней — зелёная точка и состояние связи с ПК
+        _status = new Label { FontSize = 12, TextColor = Ui.Muted, LineBreakMode = LineBreakMode.TailTruncation, MaxLines = 1, VerticalOptions = LayoutOptions.Center };
+        _statusDot = new BoxView
+        {
+            WidthRequest = 8,
+            HeightRequest = 8,
+            CornerRadius = 4,
+            Color = Ui.Ok,
+            Margin = new Thickness(0, 1, 6, 0),
+            VerticalOptions = LayoutOptions.Center,
+            IsVisible = false,
+        };
+        var statusRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) } };
+        statusRow.Add(_statusDot, 0);
+        statusRow.Add(_status, 1);
         var title = new VerticalStackLayout
         {
             Spacing = 0,
             VerticalOptions = LayoutOptions.Center,
-            Children = { Ui.Heading("Вера", 22), _status },
+            Children = { Ui.Heading("Вера", 22), statusRow },
         };
-        _remBadgeText = new Label { FontSize = 10, TextColor = Ui.OnAccent, FontFamily = Ui.FontBold, HorizontalTextAlignment = TextAlignment.Center };
+        _remBadgeText = new Label
+        {
+            FontSize = 11,
+            TextColor = Ui.OnAccent,
+            FontFamily = Ui.FontBold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+        };
         _remBadge = new Border
         {
             BackgroundColor = Ui.Accent,
             Stroke = Ui.Ink,
             StrokeThickness = 1.5,
-            StrokeShape = Ui.Round(8),
+            StrokeShape = Ui.Round(9),
             Padding = new Thickness(4, 0),
-            MinimumWidthRequest = 16,
-            HeightRequest = 16,
+            MinimumWidthRequest = 18,
+            HeightRequest = 18,
             HorizontalOptions = LayoutOptions.End,
             VerticalOptions = LayoutOptions.Start,
-            Margin = new Thickness(0, 2, 2, 0),
             InputTransparent = true,
             IsVisible = false,
             Content = _remBadgeText,
         };
-        var remBtn = new Grid { Children = { Ui.Icon("ic_bell.png", async (_, _) => await OpenPage(new RemindersPage())), _remBadge } };
+        // квадратные кнопки 44×44; отступ сверху-справа — место под бейдж
+        static ImageButton HeadBtn(ImageButton b)
+        {
+            b.Margin = new Thickness(0, 5, 5, 0);
+            return b;
+        }
+        var remBtn = new Grid
+        {
+            Children =
+            {
+                HeadBtn(Ui.SquareIcon("ic_bell.png", async (_, _) => await OpenPage(new RemindersPage()), "Напоминания")),
+                _remBadge,
+            },
+        };
         var icons = new HorizontalStackLayout
         {
-            Spacing = 0,
+            Spacing = 3,
             VerticalOptions = LayoutOptions.Center,
             Children =
             {
-                Ui.Icon("ic_new_chat.png", async (_, _) => await NewChatAsync()),
+                HeadBtn(Ui.SquareIcon("ic_more.png", async (_, _) => await MoreMenuAsync(), "Ещё")),
                 remBtn,
-                Ui.Icon("ic_sync.png", async (_, _) => await OpenPage(new SyncPage())),
-                Ui.Icon("ic_star.png", async (_, _) => await OpenPage(new MemoryPage())),
-                Ui.Icon("ic_gear.png", async (_, _) => await OpenPage(new SettingsPage())),
+                HeadBtn(Ui.SquareIcon("ic_gear.png", async (_, _) => await OpenPage(new SettingsPage()), "Настройки")),
             },
         };
         var header = new Grid
         {
-            Padding = new Thickness(16, 6, 6, 6),
+            Padding = new Thickness(16, 10, 11, 10),
+            ColumnSpacing = 10,
             ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
         };
         header.Add(title, 0);
@@ -140,8 +188,9 @@ public sealed class ChatPage : ContentPage
         var headerLine = new BoxView { Color = Ui.Surface2, HeightRequest = 2, VerticalOptions = LayoutOptions.End };
 
         // ------------------------------------------------ сообщения
-        _list = new VerticalStackLayout { Spacing = 10, Padding = new Thickness(12, 12, 12, 8) };
+        _list = new VerticalStackLayout { Spacing = 12, Padding = new Thickness(14, 16, 14, 8) };
         _empty = BuildEmpty();
+        _summary = BuildSummary();
         _scroll = new ScrollView { Content = _list, VerticalScrollBarVisibility = ScrollBarVisibility.Never };
         _scroll.Scrolled += (_, e) =>
         {
@@ -204,52 +253,59 @@ public sealed class ChatPage : ContentPage
             Placeholder = "Напиши Вере…",
             PlaceholderColor = Ui.Faint,
             TextColor = Ui.Text,
-            FontSize = 16,
+            FontSize = 15,
             AutoSize = EditorAutoSizeOption.TextChanges,
             MaximumHeightRequest = 140,
             MinimumHeightRequest = 44,
             BackgroundColor = Colors.Transparent,
             VerticalOptions = LayoutOptions.Center,
-            Margin = new Thickness(0, 2),
+            Margin = new Thickness(0, 0),
         };
         _input.TextChanged += (_, _) => { Touch(); UpdateSendIcon(); };
         _input.Focused += (_, _) => { Touch(); ScrollToEnd(true); };
 
-        var photoBtn = Ui.Icon("ic_image.png", async (_, _) => await PickImageAsync(), 42, 9);
-        photoBtn.VerticalOptions = LayoutOptions.End;
-        var clipBtn = Ui.Icon("ic_clip.png", async (_, _) => await PickDocumentsAsync(), 42, 9);
-        clipBtn.VerticalOptions = LayoutOptions.End;
-        _micBtn = Ui.Icon("ic_mic.png", (_, _) => { Touch(); _voice.Toggle(); }, 42, 9);
-        _micBtn.VerticalOptions = LayoutOptions.End;
-        _sendBtn = new ImageButton
+        // слева «+» (фото, камера, документ), справа золотая кнопка: микрофон → отправить → стоп
+        var plusBtn = new ImageButton
         {
-            Source = "ic_send_dark.png",
-            WidthRequest = 48,
+            Source = "ic_plus.png",
+            WidthRequest = 44,
             HeightRequest = 44,
             CornerRadius = 14,
-            Padding = new Thickness(11),
+            Padding = new Thickness(12),
+            BackgroundColor = Ui.Surface2,
+            BorderColor = Ui.Stroke,
+            BorderWidth = 2,
+            VerticalOptions = LayoutOptions.End,
+        };
+        SemanticProperties.SetDescription(plusBtn, "Приложить файл");
+        plusBtn.Clicked += async (_, _) => await AttachMenuAsync();
+        _sendBtn = new ImageButton
+        {
+            Source = "ic_mic_dark.png",
+            WidthRequest = 52,
+            HeightRequest = 44,
+            CornerRadius = 14,
+            Padding = new Thickness(16, 12),
             BackgroundColor = Ui.Accent,
             BorderColor = Ui.Ink,
             BorderWidth = 2.5,
             VerticalOptions = LayoutOptions.End,
         };
-        _sendBtn.Clicked += (_, _) => Send();
+        SemanticProperties.SetDescription(_sendBtn, "Сказать голосом");
+        _sendBtn.Clicked += (_, _) => OnActionButton();
 
         var composerGrid = new Grid
         {
             ColumnDefinitions =
             {
-                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star),
-                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto),
             },
-            ColumnSpacing = 2,
-            Padding = new Thickness(4, 10, 6, 6),
+            ColumnSpacing = 8,
+            Padding = new Thickness(8),
         };
-        composerGrid.Add(clipBtn, 0);
-        composerGrid.Add(photoBtn, 1);
-        composerGrid.Add(_input, 2);
-        composerGrid.Add(_micBtn, 3);
-        composerGrid.Add(_sendBtn, 4);
+        composerGrid.Add(plusBtn, 0);
+        composerGrid.Add(_input, 1);
+        composerGrid.Add(_sendBtn, 2);
         // панель ввода — тёмный стикер с чёрной обводкой и жёсткой тенью
         var composer = new Border
         {
@@ -257,7 +313,7 @@ public sealed class ChatPage : ContentPage
             Stroke = Ui.Ink,
             StrokeThickness = 2.5,
             StrokeShape = Ui.Round(22),
-            Margin = new Thickness(10, 0, 13, 13),
+            Margin = new Thickness(12, 0, 16, 18),
             Shadow = Ui.HardShadow(4),
             Content = composerGrid,
         };
@@ -299,7 +355,6 @@ public sealed class ChatPage : ContentPage
         root.Add(header, 0, 0);
         root.Add(headerLine, 0, 0);
         root.Add(_scroll, 0, 1);
-        root.Add(_empty, 0, 1);
         root.Add(_attachBox, 0, 2);
         root.Add(_docBox, 0, 2);
         root.Add(composer, 0, 3);
@@ -313,8 +368,14 @@ public sealed class ChatPage : ContentPage
 
         // ------------------------------------------------ события
         Core.Agent.Event += e => MainThread.BeginInvokeOnMainThread(() => OnAgentEvent(e));
-        Core.Reminders.Changed += () => MainThread.BeginInvokeOnMainThread(UpdateBadge);
-        Core.Settings.Changed += _ => MainThread.BeginInvokeOnMainThread(() => { _vera.Skin = Core.Settings.Current.Skin ?? "vera"; UpdateStatus(); });
+        Core.Reminders.Changed += () => MainThread.BeginInvokeOnMainThread(() => { UpdateBadge(); RefreshSummary(); });
+        Core.Settings.Changed += _ => MainThread.BeginInvokeOnMainThread(() =>
+        {
+            _vera.Skin = Core.Settings.Current.Skin ?? "vera";
+            UpdateStatus();
+            LoadWeatherIfNeeded();
+            RefreshSummary();
+        });
         Core.Agent.HistoryChanged += () => MainThread.BeginInvokeOnMainThread(() => { if (!_busy) LoadHistory(); });
         Core.Sync.Synced += _ => MainThread.BeginInvokeOnMainThread(UpdateStatus);
         _vera.Skin = Core.Settings.Current.Skin ?? "vera";
@@ -340,6 +401,7 @@ public sealed class ChatPage : ContentPage
         LoadHistory();
         UpdateStatus();
         UpdateBadge();
+        RefreshSummary();
     }
 
     // ================================================================== жизненный цикл
@@ -350,6 +412,8 @@ public sealed class ChatPage : ContentPage
         AppState.ChatVisible = true;
         UpdateStatus();
         UpdateBadge();
+        RefreshSummary();
+        LoadWeatherIfNeeded();
         _lifeTimer ??= StartTimer(2500, LifeTick);
         if (!_greeted)
         {
@@ -424,7 +488,12 @@ public sealed class ChatPage : ContentPage
             _vera.SetEmotion("smug", 6000);
             ShowBubble(Core.Line("idle"));
         }
-        if (_live.Count == 0 && (now / 2500) % 12 == 0) UpdateStatus();
+        if (_live.Count == 0 && (now / 2500) % 12 == 0)
+        {
+            UpdateStatus();
+            RefreshSummary();
+            LoadWeatherIfNeeded();
+        }
     }
 
     // ================================================================== статус и бейдж
@@ -433,15 +502,26 @@ public sealed class ChatPage : ContentPage
     {
         var s = Core.Settings.Current;
         var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
+        _statusDot.IsVisible = false;
         if (_busy) { _status.Text = "печатает…"; _status.TextColor = Ui.AccentText; return; }
         if (_voice.IsCommandActive) { _status.Text = "слушает…"; _status.TextColor = Ui.AccentText; return; }
         _status.TextColor = Ui.Muted;
-        var pc = Core.Sync.Peers.Where(p => p.LastSync is not null).OrderByDescending(p => p.LastSync).FirstOrDefault();
-        var sync = pc?.LastSync is { } at ? $" · ПК «{pc.Name}» {RuText.Relative(at)}" : "";
+        var pc = Core.Sync.Peers.OrderByDescending(p => p.LastSync ?? DateTimeOffset.MinValue).FirstOrDefault();
         if (!Core.ProviderReady) _status.Text = $"нет ключа {title} — открой настройки";
         else if (_vera.Mode == PetMode.Sleeping) _status.Text = "спит… тапни, чтобы разбудить";
-        else _status.Text = $"{title} · {s.CurrentModel}{sync}";
+        else if (pc is not null)
+        {
+            // привязан ПК: «ПК «Дом» · синхр. только что»; точка зелёная, если синхронизация свежая
+            var fresh = pc.LastSync is { } at && DateTimeOffset.Now - at < TimeSpan.FromHours(1);
+            _statusDot.Color = fresh ? Ui.Ok : Ui.Faint;
+            _statusDot.IsVisible = true;
+            _status.Text = $"ПК «{pc.Name}» · " + (pc.LastSync is { } t ? "синхр. " + Ago(t) : "ещё не синхронизирована");
+        }
+        else _status.Text = $"{title} · {s.CurrentModel}";
     }
+
+    private static string Ago(DateTimeOffset t) =>
+        DateTimeOffset.Now - t < TimeSpan.FromMinutes(1) ? "только что" : RuText.Relative(t);
 
     private void UpdateBadge()
     {
@@ -457,18 +537,37 @@ public sealed class ChatPage : ContentPage
         _list.Children.Clear();
         _live.Clear();
         var hist = Core.Agent.GetVisibleHistory();
+        var today = DateTime.Today;
+        var summaryPlaced = false;
         foreach (var m in hist.Skip(Math.Max(0, hist.Count - HistoryShown)))
         {
+            // сводка дня — перед первым сообщением за сегодня
+            if (!summaryPlaced && m.Time.LocalDateTime.Date >= today)
+            {
+                _list.Children.Add(_summary);
+                summaryPlaced = true;
+            }
             var v = new MessageView(m.Role == "user", m.Time);
             if (m.Role == "user") v.SetUser(m.Text, null, m.HasImage);
             else v.SetVera(m.Text, m.Tools.Select(t => new ChipState { Id = t.Id, Name = t.Name, Label = t.Label, IsError = t.IsError }).ToList(), false);
             _list.Children.Add(v);
         }
+        // сегодня ещё не говорили — сводка в конце ленты, новые сообщения пойдут под ней
+        if (!summaryPlaced) _list.Children.Add(_summary);
         UpdateEmpty();
+        RefreshSummary();
         ScrollToEnd(false, force: true);
     }
 
-    private void UpdateEmpty() => _empty.IsVisible = _list.Children.Count == 0;
+    private bool HasMessages => _list.Children.Any(c => c is MessageView);
+
+    /// <summary>Пустой чат: подсказка с быстрыми просьбами — последней строкой ленты (под сводкой).</summary>
+    private void UpdateEmpty()
+    {
+        var has = _list.Children.Contains(_empty);
+        if (HasMessages) { if (has) _list.Children.Remove(_empty); }
+        else if (!has) _list.Children.Add(_empty);
+    }
 
     private View BuildEmpty()
     {
@@ -480,10 +579,10 @@ public sealed class ChatPage : ContentPage
         };
         foreach (var (label, text) in new[]
                  {
-                     ("⏰ Напомни через 20 минут…", "Напомни мне через 20 минут сделать перерыв"),
-                     ("🌦️ Погода на завтра", "Какая погода в Москве на завтра?"),
-                     ("🔦 Включи фонарик", "Включи фонарик"),
-                     ("📱 Открой YouTube", "Открой YouTube"),
+                     ("Напомни через 20 минут…", "Напомни мне через 20 минут сделать перерыв"),
+                     ("Погода на завтра", "Какая погода в Москве на завтра?"),
+                     ("Включи фонарик", "Включи фонарик"),
+                     ("Открой YouTube", "Открой YouTube"),
                  })
         {
             var b = Ui.Chip(label, (_, _) => Send(text));
@@ -493,8 +592,7 @@ public sealed class ChatPage : ContentPage
         return new VerticalStackLayout
         {
             Spacing = 8,
-            Padding = new Thickness(28, 0),
-            VerticalOptions = LayoutOptions.Center,
+            Padding = new Thickness(14, 28, 14, 0),
             Children =
             {
                 new Label { Text = "Ну что, начнём?", FontSize = 22, FontFamily = Ui.Display, TextColor = Ui.Text, HorizontalTextAlignment = TextAlignment.Center },
@@ -506,6 +604,138 @@ public sealed class ChatPage : ContentPage
                 chips,
             },
         };
+    }
+
+    // ================================================================== сводка дня
+
+    private VerticalStackLayout BuildSummary()
+    {
+        _sumCaption = new Label { FontSize = 12, FontFamily = Ui.FontBold, TextColor = Ui.Faint, HorizontalOptions = LayoutOptions.Center };
+        _sumTemp = new Label { FontSize = 30, FontFamily = Ui.Display, TextColor = Ui.Accent, VerticalOptions = LayoutOptions.Center };
+        _sumDesc = new Label { FontSize = 13, TextColor = Ui.Soft, LineBreakMode = LineBreakMode.WordWrap, VerticalOptions = LayoutOptions.Center };
+        _sumWeather = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star) },
+            ColumnSpacing = 12,
+            IsVisible = false,
+        };
+        _sumWeather.Add(_sumTemp, 0);
+        _sumWeather.Add(_sumDesc, 1);
+        _sumPills = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap };
+        _sumNoPills = new Label { Text = "На сегодня напоминаний нет", FontSize = 12.5, TextColor = Ui.Faint, IsVisible = false };
+        var card = new Border
+        {
+            BackgroundColor = Ui.Surface,
+            Stroke = Ui.Ink,
+            StrokeThickness = 2.5,
+            StrokeShape = Ui.Round(18),
+            Padding = new Thickness(14),
+            Margin = new Thickness(0, 0, 3, 3),
+            Shadow = Ui.HardShadow(3),
+            Content = new VerticalStackLayout { Spacing = 10, Children = { _sumWeather, _sumPills, _sumNoPills } },
+        };
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) => await OpenPage(new RemindersPage());
+        card.GestureRecognizers.Add(tap);
+        return new VerticalStackLayout { Spacing = 8, IsVisible = false, Children = { _sumCaption, card } };
+    }
+
+    /// <summary>Обновить сводку: подпись по времени суток, погода (если загружена), пилюли напоминаний на сегодня.</summary>
+    private void RefreshSummary()
+    {
+        if (_sumCaption is null) return;
+        var now = DateTimeOffset.Now;
+        var h = now.Hour;
+        _sumCaption.Text = (h < 5 ? "ночь" : h < 12 ? "утро" : h < 18 ? "день" : "вечер") + " · сводка";
+
+        var city = (Core.Settings.Current.City ?? "").Trim();
+        var w = city.Length > 0 && _weatherCity == city ? _weather : null;
+        _sumWeather.IsVisible = w is not null;
+        if (w is not null)
+        {
+            _sumTemp.Text = Signed(w.Temp) + "°";
+            _sumDesc.Text = WeatherLine(w);
+        }
+
+        _sumPills.Children.Clear();
+        var today = DateTime.Today;
+        var items = Core.Reminders.Upcoming()
+            .Where(r => r.Due.LocalDateTime.Date == today && r.Due > now.AddMinutes(-1))
+            .Take(4)
+            .ToList();
+        foreach (var r in items)
+        {
+            // ближайшее — золотая пилюля, остальные — серые
+            var first = _sumPills.Children.Count == 0;
+            var text = r.Text.Length > 24 ? r.Text[..23].TrimEnd() + "…" : r.Text;
+            _sumPills.Children.Add(new Border
+            {
+                BackgroundColor = first ? Ui.Accent : Colors.Transparent,
+                Stroke = first ? Ui.Ink : Ui.Stroke,
+                StrokeThickness = 2,
+                StrokeShape = Ui.Round(13),
+                Padding = new Thickness(9, 3),
+                Margin = new Thickness(0, 0, 6, 6),
+                Content = new Label
+                {
+                    Text = r.Due.LocalDateTime.ToString("HH:mm") + " " + text,
+                    FontSize = 12,
+                    FontFamily = Ui.FontBold,
+                    TextColor = first ? Ui.OnAccent : Ui.Soft,
+                    MaxLines = 1,
+                    LineBreakMode = LineBreakMode.TailTruncation,
+                },
+            });
+        }
+        _sumPills.IsVisible = items.Count > 0;
+        _sumNoPills.IsVisible = items.Count == 0 && w is not null;
+        // нечего показать — сводку прячем
+        _summary.IsVisible = w is not null || items.Count > 0;
+    }
+
+    private static string Signed(int t) => t > 0 ? "+" + t : t.ToString();
+
+    /// <summary>«Облачно, −3…+1°, осадки 70%. Шарф не забудь.»</summary>
+    private static string WeatherLine(WeatherNow w)
+    {
+        var d = string.IsNullOrWhiteSpace(w.Description) ? w.Place : char.ToUpper(w.Description[0]) + w.Description[1..];
+        var s = $"{d}, {Signed(w.Min)}…{Signed(w.Max)}°";
+        if (w.Precip is >= 50) s += $", осадки {w.Precip}%";
+        var tip = w.Max <= 0 ? "Шарф не забудь."
+            : w.Precip is >= 60 ? "Зонт не забудь."
+            : w.Wind >= 10 ? "Ветрено — держи шапку."
+            : w.Max >= 27 ? "Жарко — возьми воды."
+            : "";
+        return s + "." + (tip.Length > 0 ? " " + tip : "");
+    }
+
+    /// <summary>Погода для сводки — в фоне, не чаще раза в 30 минут; ошибки молча скрываем.</summary>
+    private void LoadWeatherIfNeeded()
+    {
+        var city = (Core.Settings.Current.City ?? "").Trim();
+        if (city.Length == 0 || _weatherLoading) return;
+        if (_weatherCity == city && System.Environment.TickCount64 - _weatherAt < 30 * 60_000L) return;
+        _weatherLoading = true;
+        var core = Core;
+        _ = Task.Run(async () =>
+        {
+            WeatherNow? w = null;
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                w = await core.Tools.WeatherNowAsync(city, cts.Token);
+            }
+            catch { /* нет сети или города — просто без погоды */ }
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                _weatherLoading = false;
+                if (w is not null || _weatherCity != city) _weather = w;
+                _weatherCity = city;
+                // неудача — повторим минут через 5
+                _weatherAt = System.Environment.TickCount64 - (w is null ? 25 * 60_000L : 0);
+                RefreshSummary();
+            });
+        });
     }
 
     private void ScrollToEnd(bool animated, bool force = false)
@@ -522,10 +752,24 @@ public sealed class ChatPage : ContentPage
         });
     }
 
+    /// <summary>Меню «⋯» в шапке: новый диалог, синхронизация, память.</summary>
+    private async Task MoreMenuAsync()
+    {
+        Touch();
+        const string newChat = "Новый диалог", sync = "Синхронизация с ПК", memory = "Что Вера помнит";
+        var choice = await DisplayActionSheetAsync("Ещё", "Отмена", null, newChat, sync, memory);
+        switch (choice)
+        {
+            case newChat: await NewChatAsync(); break;
+            case sync: await OpenPage(new SyncPage()); break;
+            case memory: await OpenPage(new MemoryPage()); break;
+        }
+    }
+
     private async Task NewChatAsync()
     {
         Touch();
-        if (_list.Children.Count == 0) return;
+        if (!HasMessages) return;
         var ok = await DisplayAlertAsync("Новый диалог", "Текущая переписка будет очищена (память и напоминания останутся).", "Очистить", "Отмена");
         if (!ok) return;
         _speech.Stop();
@@ -602,25 +846,51 @@ public sealed class ChatPage : ContentPage
         });
     }
 
-    private void UpdateSendIcon()
-    {
-        var stop = _busy || (_speech.IsActive && string.IsNullOrWhiteSpace(_input.Text) && _attachments.Count == 0);
-        var src = stop ? "ic_stop_dark.png" : "ic_send_dark.png";
-        if (_sendBtn.Source is FileImageSource f && f.File == src) return;
-        _sendBtn.Source = src;
-    }
+    private bool HasDraft => !string.IsNullOrWhiteSpace(_input.Text) || _attachments.Count > 0 || _docs.Count > 0;
 
-    // ================================================================== фото
-
-    private async Task PickImageAsync()
+    /// <summary>Золотая кнопка: во время ответа/речи — стоп, с текстом/вложениями — отправить, иначе — голос.</summary>
+    private void OnActionButton()
     {
         Touch();
-        var choice = await DisplayActionSheetAsync("Добавить фото", "Отмена", null, "🖼️ Из галереи", "📷 Снять камерой");
-        if (choice is null || choice == "Отмена") return;
+        if (_busy || _speech.IsActive || HasDraft) { Send(); return; }
+        _voice.Toggle();
+    }
+
+    private void UpdateSendIcon()
+    {
+        string src, hint;
+        if (_busy || (_speech.IsActive && !HasDraft)) (src, hint) = ("ic_stop_dark.png", "Остановить");
+        else if (HasDraft) (src, hint) = ("ic_send_dark.png", "Отправить");
+        else if (_voice.State is RecorderState.Listening or RecorderState.Recording) (src, hint) = ("ic_mic_on_dark.png", "Перестать слушать");
+        else (src, hint) = ("ic_mic_dark.png", "Сказать голосом");
+        if (_sendBtn.Source is FileImageSource f && f.File == src) return;
+        _sendBtn.Source = src;
+        SemanticProperties.SetDescription(_sendBtn, hint);
+    }
+
+    // ================================================================== вложения
+
+    /// <summary>Меню кнопки «+»: фото из галереи, камера, документ.</summary>
+    private async Task AttachMenuAsync()
+    {
+        Touch();
+        const string gallery = "Фото из галереи", camera = "Снять камерой", doc = "Файл или документ";
+        var choice = await DisplayActionSheetAsync("Приложить", "Отмена", null, gallery, camera, doc);
+        switch (choice)
+        {
+            case gallery: await PickImageAsync(false); break;
+            case camera: await PickImageAsync(true); break;
+            case doc: await PickDocumentsAsync(); break;
+        }
+    }
+
+    private async Task PickImageAsync(bool camera)
+    {
+        Touch();
         try
         {
             FileResult? file;
-            if (choice.Contains("камер", StringComparison.OrdinalIgnoreCase))
+            if (camera)
             {
                 if (!MediaPicker.Default.IsCaptureSupported) { Ui.Toast("Камера недоступна"); return; }
                 file = await MediaPicker.Default.CapturePhotoAsync();
@@ -913,27 +1183,24 @@ public sealed class ChatPage : ContentPage
                 _vera.Mode = PetMode.Listening;
                 ShowBubble(Core.Line("listening"), "🎙️ слушаю", sticky: true, kind: "voice");
                 SetBars(true);
-                _micBtn.Source = "ic_mic_on.png";
                 break;
             case RecorderState.Recording:
                 _vera.Mode = PetMode.Recording;
                 SetBars(true);
-                _micBtn.Source = "ic_mic_on.png";
                 break;
             case RecorderState.Processing:
                 _vera.Mode = PetMode.Processing;
                 SetBars(false);
                 ShowBubble("распознаю…", "🎙️", sticky: true, kind: "voice");
-                _micBtn.Source = "ic_mic.png";
                 break;
             default:
                 SetBars(false);
-                _micBtn.Source = "ic_mic.png";
                 if (_vera.Mode is PetMode.Listening or PetMode.Recording or PetMode.Processing) _vera.Mode = PetMode.Idle;
                 if (reason is "timeout" or "short") ShowBubble(Core.Line("notHeard"), ms: 3500);
                 else HideBubbleIf("voice");
                 break;
         }
+        UpdateSendIcon();
         UpdateStatus();
     }
 

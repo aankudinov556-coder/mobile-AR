@@ -66,7 +66,7 @@ public sealed class SingleInstance : IDisposable
     private SingleInstance(Mutex mutex) => _mutex = mutex;
 
     /// <summary>null — Вера уже запущена (ей отправлен сигнал показаться).</summary>
-    public static SingleInstance? TryAcquire()
+    public static SingleInstance? TryAcquire(int waitMs = 0)
     {
         var mutex = new Mutex(true, MutexName, out var created);
         if (!created)
@@ -74,7 +74,7 @@ public sealed class SingleInstance : IDisposable
             // мьютекс мог остаться «брошенным» после падения — тогда он наш
             try
             {
-                if (!mutex.WaitOne(0))
+                if (!mutex.WaitOne(waitMs))
                 {
                     SignalExisting();
                     mutex.Dispose();

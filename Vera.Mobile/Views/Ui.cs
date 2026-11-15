@@ -14,6 +14,8 @@ public static class Ui
     public static readonly Color Text = Color.FromArgb("#f4f1e8");
     public static readonly Color Muted = Color.FromArgb("#a6a1b2");
     public static readonly Color Faint = Color.FromArgb("#8e899a");
+    /// <summary>Вторичный светлый текст (описания, серые пилюли).</summary>
+    public static readonly Color Soft = Color.FromArgb("#c9c4d4");
     public static readonly Color Accent = Color.FromArgb("#f5cf3a");
     public static readonly Color Accent2 = Color.FromArgb("#f5cf3a");
     public static readonly Color AccentSoft = Color.FromArgb("#2c2814");
@@ -266,6 +268,68 @@ public static class Ui
         Padding = new Thickness(7, 2),
         VerticalOptions = LayoutOptions.Center,
         Content = new Label { Text = text, FontSize = 11.5, TextColor = fg ?? Muted },
+    };
+
+    /// <summary>Квадратная кнопка-иконка 44×44 с обводкой (шапки экранов).</summary>
+    public static ImageButton SquareIcon(string icon, EventHandler onClick, string? description = null)
+    {
+        var b = new ImageButton
+        {
+            Source = icon,
+            WidthRequest = 44,
+            HeightRequest = 44,
+            Padding = new Thickness(12),
+            CornerRadius = 14,
+            BackgroundColor = Colors.Transparent,
+            BorderColor = Stroke,
+            BorderWidth = 2,
+            VerticalOptions = LayoutOptions.Center,
+        };
+        if (description is not null) SemanticProperties.SetDescription(b, description);
+        b.Clicked += onClick;
+        return b;
+    }
+
+    /// <summary>Шапка вложенного экрана: квадратная «назад» и заголовок Unbounded. Системную панель надо скрыть.</summary>
+    public static Grid PageHeader(Page page, string title, View? right = null)
+    {
+        var back = SquareIcon("ic_back.png", async (_, _) =>
+        {
+            try { await page.Navigation.PopAsync(); } catch { }
+        }, "Назад");
+        var g = new Grid
+        {
+            Padding = new Thickness(16, 14, 16, 10),
+            ColumnSpacing = 10,
+            ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
+        };
+        var h = Heading(title, 22);
+        h.VerticalOptions = LayoutOptions.Center;
+        g.Add(back, 0);
+        g.Add(h, 1);
+        if (right is not null) g.Add(right, 2);
+        return g;
+    }
+
+    /// <summary>Подпись раздела: мелкие прописные буквы с разрядкой.</summary>
+    public static Label Caps(string text, Color? color = null) => new()
+    {
+        Text = text.ToUpperInvariant(),
+        FontSize = 12,
+        FontFamily = FontBold,
+        CharacterSpacing = 1,
+        TextColor = color ?? Faint,
+    };
+
+    /// <summary>Картинка из MauiAsset (кадры скинов: "skins/chibi/wave.png").</summary>
+    public static ImageSource Asset(string path) =>
+        ImageSource.FromStream(() => FileSystem.OpenAppPackageFileAsync(path).GetAwaiter().GetResult());
+
+    public static Image Art(string path, double height) => new()
+    {
+        Source = Asset(path),
+        HeightRequest = height,
+        Aspect = Aspect.AspectFit,
     };
 
     public static ContentPage StylePage(ContentPage page, string title)

@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
+using Vera.Core;
+
 namespace Vera.Desktop.UI;
 
 /// <summary>Вложенные свойства для шаблонов и маленькие фабрики элементов (интерфейс строится в коде).</summary>
@@ -46,7 +48,7 @@ public static class Ui
     {
         var t = new TextBlock
         {
-            Text = text,
+            Text = L10n.T(text),
             FontSize = size,
             TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
             FontWeight = weight ?? FontWeights.Normal,
@@ -78,32 +80,32 @@ public static class Ui
     /// <summary>Содержимое кнопки: иконка + подпись.</summary>
     public static object Content(string? text, string? icon, double iconSize = 18)
     {
-        if (icon is null) return text ?? "";
+        if (icon is null) return L10n.T(text);
         var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         sp.Children.Add(Icons.Make(icon, iconSize));
         if (!string.IsNullOrEmpty(text))
-            sp.Children.Add(new TextBlock { Text = text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            sp.Children.Add(new TextBlock { Text = L10n.T(text), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         return sp;
     }
 
     public static Button Button(string? text, string style = "Btn.Ghost", string? icon = null, Action? click = null, string? tip = null)
     {
         var b = new Button { Content = Content(text, icon, style == "Btn.GhostSmall" ? 14 : 18), Style = Style(style) };
-        if (tip is not null) b.ToolTip = tip;
+        if (tip is not null) b.ToolTip = L10n.T(tip);
         if (click is not null) b.Click += (_, _) => click();
         return b;
     }
 
     public static Button IconButton(string icon, string tip, Action? click = null, double size = 36, double iconSize = 18)
     {
-        var b = new Button { Content = Icons.Make(icon, iconSize), Style = Style("Btn.Icon"), ToolTip = tip, Width = size, Height = size };
+        var b = new Button { Content = Icons.Make(icon, iconSize), Style = Style("Btn.Icon"), ToolTip = L10n.T(tip), Width = size, Height = size };
         if (click is not null) b.Click += (_, _) => click();
         return b;
     }
 
     public static Button LinkButton(string text, Action click)
     {
-        var tb = new TextBlock { Text = text, TextDecorations = TextDecorations.Underline };
+        var tb = new TextBlock { Text = L10n.T(text), TextDecorations = TextDecorations.Underline };
         var b = new Button { Content = tb, Style = Style("Btn.Link") };
         b.Click += (_, _) => click();
         return b;
@@ -188,7 +190,7 @@ public static class Ui
         var tb = Text(label, 14);
         if (hint is not null)
         {
-            tb.Inlines.Add(new System.Windows.Documents.Run("  " + hint) { FontSize = 12 });
+            tb.Inlines.Add(new System.Windows.Documents.Run("  " + L10n.T(hint)) { FontSize = 12 });
             ((System.Windows.Documents.Run)tb.Inlines.LastInline).SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "Muted");
         }
         return new CheckBox { Content = tb };
@@ -212,7 +214,7 @@ public static class Ui
     public static void SetOptions(ComboBox c, IEnumerable<(string Value, string Text)> options)
     {
         c.Items.Clear();
-        foreach (var (v, t) in options) c.Items.Add(new ComboBoxItem { Content = t, Tag = v });
+        foreach (var (v, t) in options) c.Items.Add(new ComboBoxItem { Content = L10n.T(t), Tag = v });
     }
 
     public static string? Selected(ComboBox c) => (c.SelectedItem as ComboBoxItem)?.Tag as string;
@@ -239,5 +241,5 @@ public static class Ui
     };
 
     public static RadioButton Radio(string text, string group, string style) =>
-        new() { Content = text, GroupName = group, Style = Style(style) };
+        new() { Content = L10n.T(text), GroupName = group, Style = Style(style) };
 }

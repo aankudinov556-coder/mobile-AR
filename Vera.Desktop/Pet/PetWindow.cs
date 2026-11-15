@@ -113,7 +113,7 @@ public sealed partial class PetWindow : Window
     public PetWindow(AppHost host)
     {
         _host = host;
-        Title = "Вера";
+        Title = L10n.T("Вера");
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -362,7 +362,7 @@ public sealed partial class PetWindow : Window
 
     private void AddMenu(string header, Action click)
     {
-        var mi = new MenuItem { Header = header };
+        var mi = new MenuItem { Header = L10n.T(header) };
         mi.Click += (_, _) => click();
         _menu.Items.Add(mi);
     }
@@ -721,10 +721,11 @@ public sealed partial class PetWindow : Window
 
     private void ShowText(string text, string head = "", bool sticky = false, int? ms = null, bool opensChat = false,
         IReadOnlyList<BubbleAction>? actions = null) =>
-        ShowBubble(inl => { if (!string.IsNullOrEmpty(text)) inl.Add(new Run(text)); }, head, sticky, ms, opensChat, actions);
+        ShowBubble(inl => { if (!string.IsNullOrEmpty(text)) inl.Add(new Run(L10n.T(text))); }, L10n.T(head), sticky, ms, opensChat, actions);
 
     private Run DotsRun(string baseText)
     {
+        baseText = L10n.T(baseText);
         var r = new Run(baseText);
         _dotsBase = baseText;
         _dotsPhase = 0;
@@ -831,7 +832,7 @@ public sealed partial class PetWindow : Window
             if (text.Length > 0)
             {
                 inl.Add(new Run(text));
-                if (cut) inl.Add(new Run(" …(в чате)") { Foreground = new SolidColorBrush(PetAccent), FontWeight = FontWeights.SemiBold });
+                if (cut) inl.Add(new Run(L10n.T(" …(в чате)")) { Foreground = new SolidColorBrush(PetAccent), FontWeight = FontWeights.SemiBold });
             }
             else if (streaming)
             {

@@ -150,7 +150,7 @@ public sealed class AppHost : IToolHost
         Core.Sync.Changed += () => OnUi(() => Chat.SettingsPanel.Refresh());
         Core.Sync.Synced += r => OnUi(() =>
         {
-            if (r.Received > 0 && Chat.IsVisible) Chat.Toast($"📱 {r.PeerName}: получено изменений — {r.Received}");
+            if (r.Received > 0 && Chat.IsVisible) Chat.Toast(L10n.F("📱 {0}: получено изменений — {1}", r.PeerName, r.Received));
             Chat.UpdateStatus();
         });
         SyncHost.Changed += () => OnUi(() => Chat.SettingsPanel.Refresh());
@@ -477,6 +477,21 @@ public sealed class AppHost : IToolHost
     public void Flush()
     {
         try { Core.Flush(); } catch (Exception e) { Log.Error("flush", e); }
+    }
+
+    /// <summary>Перезапуск (например, после смены языка): новая копия ждёт освобождения мьютекса.</summary>
+    public void Restart()
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (exe is not null) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "--restarted") { UseShellExecute = false })?.Dispose();
+        }
+        catch (Exception e)
+        {
+            Log.Error("restart", e);
+        }
+        Quit();
     }
 
     public void Quit()

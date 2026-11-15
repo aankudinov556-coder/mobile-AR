@@ -53,12 +53,12 @@ public sealed partial class SettingsPanel : Grid
 
         // ------------------------------------------------------------ welcome
         var welcomeText = new TextBlock { TextWrapping = TextWrapping.Wrap, LineHeight = 20, Margin = new Thickness(0, 4, 0, 0) };
-        welcomeText.Inlines.Add(new Run("Выбери, как Вера будет думать. "));
-        welcomeText.Inlines.Add(new Run("Бесплатно и офлайн") { FontWeight = FontWeights.Bold });
-        welcomeText.Inlines.Add(new Run(" — скачай модель в разделе «Локальный ИИ», ключи не нужны. "));
-        welcomeText.Inlines.Add(new Run("Через облако") { FontWeight = FontWeights.Bold });
-        welcomeText.Inlines.Add(new Run(" — вставь ключ ниже: например, OpenRouter (один ключ — сотни моделей). " +
-                                        "Для живого голоса и распознавания — ключ OpenAI или Groq. Или просто нажми готовый набор ниже."));
+        welcomeText.Inlines.Add(new Run(L10n.T("Выбери, как Вера будет думать. ")));
+        welcomeText.Inlines.Add(new Run(L10n.T("Бесплатно и офлайн")) { FontWeight = FontWeights.Bold });
+        welcomeText.Inlines.Add(new Run(L10n.T(" — скачай модель в разделе «Локальный ИИ», ключи не нужны. ")));
+        welcomeText.Inlines.Add(new Run(L10n.T("Через облако")) { FontWeight = FontWeights.Bold });
+        welcomeText.Inlines.Add(new Run(L10n.T(" — вставь ключ ниже: например, OpenRouter (один ключ — сотни моделей). ") +
+                                        L10n.T("Для живого голоса и распознавания — ключ OpenAI или Groq. Или просто нажми готовый набор ниже.")));
         var goLocal = Ui.Button("Скачать модель для ПК", "Btn.Primary", null, () => ShowSection("brain"));
         var goKeys = Ui.Button("У меня есть ключ", "Btn.Ghost", null, () => ShowSection("keys"));
         goLocal.Margin = new Thickness(0, 0, 8, 0);
@@ -417,7 +417,7 @@ public sealed partial class SettingsPanel : Grid
                 _model.Items.Add(item);
             }
             _model.Text = S.CurrentModel;
-            _window.Toast($"Моделей: {rows.Count} (🛠 — умеет команды, 👁 — видит картинки, цена — $ за 1 млн токенов: запрос/ответ).");
+            _window.Toast(L10n.F("Моделей: {0} (🛠 — умеет команды, 👁 — видит картинки, цена — $ за 1 млн токенов: запрос/ответ).", rows.Count));
             _model.IsDropDownOpen = rows.Count > 0;
         }
         catch (Exception e)
@@ -472,7 +472,7 @@ public sealed partial class SettingsPanel : Grid
         async Task Test()
         {
             status.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
-            status.Text = "Проверяю…";
+            status.Text = L10n.T("Проверяю…");
             try
             {
                 var r = await Task.Run(() => Core.TestKeyAsync(keyName));
@@ -515,7 +515,7 @@ public sealed partial class SettingsPanel : Grid
         {
             items.Add(Ui.IconButton("trash", "Удалить ключ", () =>
             {
-                if (!ConfirmDialog.Ask(_window, "Удалить ключ?", $"Ключ {st.Title} будет удалён с этого компьютера.", okText: "Удалить", danger: true)) return;
+                if (!ConfirmDialog.Ask(_window, L10n.T("Удалить ключ?"), L10n.F("Ключ {0} будет удалён с этого компьютера.", st.Title), okText: L10n.T("Удалить"), danger: true)) return;
                 Core.Secrets.Set(keyName, null);
             }, 32, 16));
         }
@@ -538,7 +538,7 @@ public sealed partial class SettingsPanel : Grid
     {
         if (!_statusByKey.TryGetValue(keyName, out var status)) return;
         status.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
-        status.Text = "Сохранено. Проверяю…";
+        status.Text = L10n.T("Сохранено. Проверяю…");
         try
         {
             var r = await Task.Run(() => Core.TestKeyAsync(keyName));
@@ -560,8 +560,24 @@ public sealed partial class SettingsPanel : Grid
         var persona = Combo(Personas.All.Values.Select(p => (p.Id, p.Label)), s => s.Persona, (s, v) => s.Persona = v);
         var prompt = Text(s => s.CustomPrompt, (s, v) => s.CustomPrompt = v, multiline: true,
             placeholder: "Например: я фронтенд-разработчик, отвечай с примерами на TypeScript");
+        var lang = Ui.Combo(new[] { ("ru", "Русский"), ("en", "English") });
+        _refreshers.Add(() => { if (!lang.IsDropDownOpen) Ui.Select(lang, S.Language == "en" ? "en" : "ru"); });
+        lang.SelectionChanged += (_, _) =>
+        {
+            if (_loading) return;
+            var v = Ui.Selected(lang);
+            if (v is null || v == (S.Language == "en" ? "en" : "ru")) return;
+            Save(s => s.Language = v);
+            // язык меняется целиком только после перезапуска — спрашиваем на выбранном языке
+            var en = v == "en";
+            if (ConfirmDialog.Ask(_window, en ? "Restart Vera?" : "Перезапустить Веру?",
+                    en ? "The interface language changes after a restart. Restart now?" : "Язык интерфейса сменится после перезапуска. Перезапустить сейчас?",
+                    okText: en ? "Restart" : "Перезапустить", cancelText: en ? "Later" : "Позже"))
+                _host.Restart();
+        };
         return Ui.Card(
             Ui.Title("💁 Характер"),
+            Ui.Field("Язык / Language", lang),
             Ui.Field("Как Вере тебя называть", name),
             Ui.Field("Город (погода на главном экране и в сводке)", Text(s => s.City, (s, v) => s.City = v.Trim(), placeholder: "Москва", maxLength: 60)),
             Ui.Field("Характер", persona),
@@ -650,7 +666,7 @@ public sealed partial class SettingsPanel : Grid
         var rate = SliderField("Скорость", 0.6, 1.6, 0.05, s => s.Tts.Rate, (s, v) => s.Tts.Rate = Math.Round(v, 2), Num2);
         var volume = SliderField("Громкость", 0, 1, 0.05, s => s.Tts.Volume, (s, v) => s.Tts.Volume = Math.Round(v, 2), Num2);
 
-        var testText = new TextBox { Text = "Хе-хе, семпай~ Ну что, слышно меня? Только не влюбись!" };
+        var testText = new TextBox { Text = L10n.T("Хе-хе, семпай~ Ну что, слышно меня? Только не влюбись!") };
         var testBtn = Ui.Button("Тест", "Btn.Primary", "play", () =>
         {
             if (S.Tts.Engine == "off")
@@ -688,7 +704,7 @@ public sealed partial class SettingsPanel : Grid
             {
                 _loading = false;
             }
-            _window.Toast($"Голосов: {voices.Count}");
+            _window.Toast(L10n.F("Голосов: {0}", voices.Count));
         }
         catch (Exception e)
         {
@@ -741,8 +757,8 @@ public sealed partial class SettingsPanel : Grid
             ("vosk", "Vosk — офлайн, бесплатно (рекомендую)"),
             ("stt", "Через сервис распознавания (каждая фраза — в облако)"),
         }, s => s.Voice.WakeEngine, (s, v) => s.Voice.WakeEngine = v);
-        var sttNote = Ui.Note("Микрофон слушает постоянно, и каждая услышанная фраза отправляется на распознавание — это тратит баланс STT-сервиса. " +
-                              "С Groq это почти бесплатно. Пока Вера говорит, она себя не слушает.");
+        var sttNote = Ui.Note(L10n.T("Микрофон слушает постоянно, и каждая услышанная фраза отправляется на распознавание — это тратит баланс STT-сервиса. ") +
+                              L10n.T("С Groq это почти бесплатно. Пока Вера говорит, она себя не слушает."));
         ShowIf(sttNote, s => s.Voice.WakeEngine != "vosk");
         var voskRow = DownloadRow(ModelCatalog.Get("vosk-small-ru")!, onInstalled: () => _host.Voice.SyncSettings());
         ShowIf(voskRow, s => s.Voice.WakeEngine == "vosk");
@@ -759,8 +775,8 @@ public sealed partial class SettingsPanel : Grid
         }, s => s.Voice.Vad, (s, v) => s.Voice.Vad = v);
 
         var wakeLabel = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        wakeLabel.Inlines.Add(new Run("Голосовая активация по слову "));
-        wakeLabel.Inlines.Add(new Run("«Вера»") { FontWeight = FontWeights.Bold });
+        wakeLabel.Inlines.Add(new Run(L10n.T("Голосовая активация по слову ")));
+        wakeLabel.Inlines.Add(new Run(L10n.T("«Вера»")) { FontWeight = FontWeights.Bold });
         var wake = new CheckBox { Content = wakeLabel };
         _refreshers.Add(() => wake.IsChecked = S.Voice.WakeWord);
         wake.Click += (_, _) => Save(s => s.Voice.WakeWord = wake.IsChecked == true);
@@ -772,7 +788,7 @@ public sealed partial class SettingsPanel : Grid
             Ui.Field("Микрофон", Ui.Row(new UIElement[] { _mic, micRefresh }, 8, 0)),
             SliderField("Чувствительность микрофона", 0, 1, 0.05, s => s.Voice.Sensitivity, (s, v) => s.Voice.Sensitivity = Math.Round(v, 2), Num2),
             SliderField("Пауза, после которой фраза считается законченной", 500, 2500, 100, s => s.Voice.SilenceMs,
-                (s, v) => s.Voice.SilenceMs = (int)Math.Round(v), v => $"{v:0} мс"),
+                (s, v) => s.Voice.SilenceMs = (int)Math.Round(v), v => L10n.F("{0:0} мс", v)),
             Ui.Field("Как понять, что ты говоришь", vad),
             Toggle("Звук начала/конца записи", s => s.Voice.Chime, (s, v) => s.Voice.Chime = v),
             wake,
@@ -829,7 +845,7 @@ public sealed partial class SettingsPanel : Grid
         tb.GotKeyboardFocus += (_, _) =>
         {
             recording = true;
-            tb.Text = "Нажми сочетание…";
+            tb.Text = L10n.T("Нажми сочетание…");
             tb.SetResourceReference(System.Windows.Controls.Control.ForegroundProperty, "Accent");
             _host.PauseHotkeys(true);
         };
@@ -881,9 +897,9 @@ public sealed partial class SettingsPanel : Grid
             Ui.Field("Скин", Combo(SkinOptions(), s => s.Skin, (s, v) => s.Skin = v)),
             Toggle("Иногда болтает сама (без API)", s => s.Pet.IdleChatter, (s, v) => s.Pet.IdleChatter = v),
             Toggle("Садится на пол, когда скучно", s => s.Pet.SitWhenBored, (s, v) => s.Pet.SitWhenBored = v),
-            SliderField("Через сколько садится", 1, 30, 1, s => s.Pet.SitAfterMinutes, (s, v) => s.Pet.SitAfterMinutes = (int)Math.Round(v), v => $"{v:0} мин"),
-            SliderField("Размер", 2, 6, 1, s => s.Pet.Scale, (s, v) => s.Pet.Scale = (int)Math.Round(v), v => $"{v:0}×"),
-            SliderField("Сколько показывать реплику", 3, 30, 1, s => s.Pet.BubbleSeconds, (s, v) => s.Pet.BubbleSeconds = (int)Math.Round(v), v => $"{v:0} с"),
+            SliderField(L10n.T("Через сколько садится"), 1, 30, 1, s => s.Pet.SitAfterMinutes, (s, v) => s.Pet.SitAfterMinutes = (int)Math.Round(v), v => L10n.F("{0:0} мин", v)),
+            SliderField(L10n.T("Размер"), 2, 6, 1, s => s.Pet.Scale, (s, v) => s.Pet.Scale = (int)Math.Round(v), v => $"{v:0}×"),
+            SliderField(L10n.T("Сколько показывать реплику"), 3, 30, 1, s => s.Pet.BubbleSeconds, (s, v) => s.Pet.BubbleSeconds = (int)Math.Round(v), v => L10n.F("{0:0} с", v)),
             hint);
     }
 
@@ -916,7 +932,7 @@ public sealed partial class SettingsPanel : Grid
         hint.Margin = new Thickness(0, 2, 0, 8);
         _apps = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
         _refreshers.Add(RenderApps);
-        _appName = new TextBox { Tag = "Название (как будешь говорить)" };
+        _appName = new TextBox { Tag = L10n.T("Название (как будешь говорить)") };
         var pick = Ui.Button("Файл…", "Btn.Ghost", "folder", PickApp);
         _appStatus = Ui.Muted("");
         _appStatus.Margin = new Thickness(0, 6, 0, 0);
@@ -951,7 +967,7 @@ public sealed partial class SettingsPanel : Grid
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Выбери программу или ярлык",
+            Title = L10n.T("Выбери программу или ярлык"),
             Filter = "Программы и ярлыки|*.exe;*.lnk;*.url;*.bat;*.cmd;*.appref-ms|Все файлы|*.*",
             CheckFileExists = true,
         };
@@ -961,7 +977,7 @@ public sealed partial class SettingsPanel : Grid
         if (name.Length == 0) name = System.IO.Path.GetFileNameWithoutExtension(p);
         Save(s => s.AppShortcuts.Add(new AppShortcut { Name = name, Path = p }));
         _appName.Clear();
-        _appStatus.Text = $"Добавлено: {name}";
+        _appStatus.Text = L10n.F("Добавлено: {0}", name);
     }
 
     // ================================================================== system
@@ -985,7 +1001,7 @@ public sealed partial class SettingsPanel : Grid
         quit.Margin = new Thickness(0, 0, 8, 8);
         var buttons = new WrapPanel { Margin = new Thickness(0, 8, 0, 0), Children = { open, quit } };
         var v = Assembly.GetExecutingAssembly().GetName().Version;
-        var about = Ui.Muted($"Вера v{v?.ToString(3) ?? "?"} · данные: {dataDir}");
+        var about = Ui.Muted(L10n.F("Вера v{0} · данные: {1}", v?.ToString(3) ?? "?", dataDir));
         return Ui.Card(
             Ui.Title("⚙️ Система"),
             Toggle("Запускать вместе с Windows", s => s.Autostart, (s, val) => s.Autostart = val),

@@ -95,7 +95,7 @@ public sealed class TodayPanel : Border
         _weather.Children.Clear();
         if (city.Trim().Length == 0)
         {
-            var box = new TextBox { Tag = "Твой город — для погоды" };
+            var box = new TextBox { Tag = L10n.T("Твой город — для погоды") };
             box.KeyDown += (_, e) =>
             {
                 if (e.Key != Key.Enter || box.Text.Trim().Length == 0) return;
@@ -112,14 +112,14 @@ public sealed class TodayPanel : Border
             _weather.Children.Clear();
             if (w is null)
             {
-                _weather.Children.Add(Card(Ui.Muted($"Город «{city}» не нашёлся — поправь в Настройки → Вера.", 12), false));
+                _weather.Children.Add(Card(Ui.Muted(L10n.F("Город «{0}» не нашёлся — поправь в Настройки → Характер и вид.", city), 12), false));
                 return;
             }
             var temp = Ui.Heading((w.Temp > 0 ? "+" : "") + w.Temp + "°", 34);
             temp.SetResourceReference(TextBlock.ForegroundProperty, "AccentText");
             var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
             info.Children.Add(Ui.Text(Capital(w.Description), 14, "Fg", FontWeights.SemiBold));
-            info.Children.Add(Ui.Muted($"{w.Place} · {w.Min}…{w.Max}° · ветер {w.Wind} м/с" + (w.Precip is { } p ? $" · осадки {p}%" : ""), 12));
+            info.Children.Add(Ui.Muted(L10n.F("{0} · {1}…{2}° · ветер {3} м/с", w.Place, w.Min, w.Max, w.Wind) + (w.Precip is { } p ? L10n.F(" · осадки {0}%", p) : ""), 12));
             var card = Card(Ui.Row(new UIElement[] { temp, info }, 0, 1), true);
             _weather.Children.Add(card);
             Anim.Pop(card, 300, 0.92);
@@ -200,6 +200,6 @@ public sealed class TodayPanel : Border
         var p = _host.Core.Sync.Peers.OrderByDescending(x => x.LastSync).FirstOrDefault();
         _phone.Text = p is null
             ? "Телефон не привязан — Настройки → Телефон."
-            : $"📱 {p.Name}: " + (p.LastSync is { } t ? "синхронизирован " + RuText.Relative(t) : "ещё не синхронизировался");
+            : $"📱 {p.Name}: " + (p.LastSync is { } t ? L10n.T("синхронизирован ") + RuText.Relative(t) : L10n.T("ещё не синхронизировался"));
     }
 }

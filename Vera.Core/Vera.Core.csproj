@@ -16,4 +16,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Vera.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="L10n\en.json" LogicalName="Vera.Core.L10n.en.json" />
+  </ItemGroup>
 </Project>

@@ -9,6 +9,8 @@ using System.Windows.Threading;
 using Vera.Core.Sprites;
 using Vera.Desktop.UI;
 
+using Vera.Core;
+
 namespace Vera.Desktop.Chat;
 
 /// <summary>
@@ -131,7 +133,7 @@ public sealed class StageView : Border
     /// <summary>Строка статуса («печатает ответ…», «думает…»); accent — золотом.</summary>
     public void SetStatus(string text, bool accent)
     {
-        _status.Text = text;
+        _status.Text = L10n.T(text);
         _status.SetResourceReference(TextBlock.ForegroundProperty, accent ? "AccentText" : "Muted");
         UpdateSubline();
     }

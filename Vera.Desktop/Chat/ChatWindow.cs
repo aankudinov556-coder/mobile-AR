@@ -25,6 +25,7 @@ public sealed class ChatWindow : Window
 {
     private readonly AppHost _host;
     private readonly TextBlock _status;
+    private readonly Border _portrait;
     private readonly Dictionary<string, RadioButton> _tabs = new();
     private readonly Dictionary<string, FrameworkElement> _panels = new();
     private readonly List<TextBlock> _tabLabels = new();
@@ -56,7 +57,7 @@ public sealed class ChatWindow : Window
 
         WindowChrome.SetWindowChrome(this, new WindowChrome
         {
-            CaptionHeight = 40,
+            CaptionHeight = 56,
             ResizeBorderThickness = new Thickness(4),
             GlassFrameThickness = new Thickness(0),
             CornerRadius = new CornerRadius(0),
@@ -64,13 +65,13 @@ public sealed class ChatWindow : Window
         });
 
         // ------------------------------------------------------------ titlebar
-        var avatarImg = new Image { Source = SpriteSheet.LoadImage("/assets/icon.png"), Width = 26, Height = 26 };
-        RenderOptions.SetBitmapScalingMode(avatarImg, BitmapScalingMode.NearestNeighbor);
-        var avatar = new Border { CornerRadius = new CornerRadius(7), Child = avatarImg, VerticalAlignment = VerticalAlignment.Center };
-        avatar.SetResourceReference(Border.BackgroundProperty, "AccentSoft");
-        _status = Ui.Text("загружаюсь…", 11, "Muted", wrap: false);
-        var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
-        titles.Children.Add(Ui.Text("Вера", 13.5, "Fg", FontWeights.Bold, wrap: false));
+        // портрет текущего скина: лицо меняется вместе с эмоцией ответа
+        _portrait = SkinArt.Avatar(host.Core.Settings.Current.Skin, "neutral", 40);
+        _portrait.VerticalAlignment = VerticalAlignment.Center;
+        _status = Ui.Text("загружаюсь…", 11.5, "Muted", wrap: false);
+        _status.TextTrimming = TextTrimming.CharacterEllipsis;
+        var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(11, 0, 0, 0) };
+        titles.Children.Add(Ui.Text("Вера", 16, "Fg", FontWeights.Black, wrap: false));
         titles.Children.Add(_status);
         var min = Ui.IconButton("minus", "Свернуть", () => WindowState = WindowState.Minimized, 32, 16);
         var close = Ui.IconButton("x", "Закрыть", Hide, 32, 16);
@@ -80,13 +81,14 @@ public sealed class ChatWindow : Window
         var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         controls.Children.Add(min);
         controls.Children.Add(close);
-        var titleGrid = Ui.Row(new UIElement[] { avatar, titles, controls }, 0, 1);
-        var titleBar = new Border { Height = 40, Padding = new Thickness(12, 0, 6, 0), BorderThickness = new Thickness(0, 0, 0, 1), Child = titleGrid };
+        var titleGrid = Ui.Row(new UIElement[] { _portrait, titles, controls }, 0, 1);
+        var titleBar = new Border { Height = 56, Padding = new Thickness(12, 0, 6, 0), BorderThickness = new Thickness(0, 0, 0, 1), Child = titleGrid };
         titleBar.SetResourceReference(Border.BackgroundProperty, "Bg2");
         titleBar.SetResourceReference(Border.BorderBrushProperty, "Line");
 
         // ------------------------------------------------------------ tabs
-        _badgeText = new TextBlock { FontSize = 10, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center };
+        _badgeText = new TextBlock { FontSize = 10, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center };
+        _badgeText.SetResourceReference(TextBlock.ForegroundProperty, "OnAccent");
         _badge = new Border
         {
             CornerRadius = new CornerRadius(9),
@@ -280,13 +282,32 @@ public sealed class ChatWindow : Window
             return;
         }
         _status.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
-        _status.Text = core.Secrets.Has(s.Provider) ? $"{title} · {s.CurrentModel}" : $"нет ключа {title} — открой настройки";
+        var model = s.Provider == "local" ? System.IO.Path.GetFileNameWithoutExtension(s.CurrentModel) : s.CurrentModel;
+        var text = core.ProviderReady ? $"{title} · {model}" : $"нет ключа {title} — открой настройки";
+        var phone = core.Sync.Peers.Where(p => p.LastSync is not null).OrderByDescending(p => p.LastSync).FirstOrDefault();
+        if (phone?.LastSync is { } at) text += " · 📱 " + Vera.Core.RuText.Relative(at);
+        _status.Text = text;
     }
 
     public void OnAgentEvent(AgentEvent e)
     {
+        var skin = _host.Core.Settings.Current.Skin;
+        switch (e)
+        {
+            case TurnStarted: SkinArt.SetAvatar(_portrait, skin, "think"); break;
+            case EmotionChanged em: SkinArt.SetAvatar(_portrait, skin, em.Emotion); break;
+            case TurnEnded te: SkinArt.SetAvatar(_portrait, skin, te.Emotion); break;
+            case TurnFailed tf when !tf.Aborted: SkinArt.SetAvatar(_portrait, skin, "sad"); break;
+        }
         ChatPanel.OnAgentEvent(e);
         if (e is TurnStarted or TurnEnded or TurnFailed) UpdateStatus();
+    }
+
+    /// <summary>Скин сменился: новый портрет и аватарки в чате.</summary>
+    public void OnSkinChanged()
+    {
+        SkinArt.SetAvatar(_portrait, _host.Core.Settings.Current.Skin, "neutral");
+        ChatPanel.OnSkinChanged();
     }
 
     public void OnSettingsChanged()

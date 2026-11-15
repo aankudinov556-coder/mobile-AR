@@ -23,6 +23,13 @@
     <SolidColorBrush x:Key="CodeFg" Color="#E6E1F2" />
     <SolidColorBrush x:Key="ToastErrBg" Color="#4A1F2A" />
     <SolidColorBrush x:Key="ToastErrFg" Color="#FFD6DC" />
+    <SolidColorBrush x:Key="AccentText" Color="#F06BB0" />
+    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Ink" Color="#0B0A0E" />
+    <SolidColorBrush x:Key="Paper" Color="#FFFAFF" />
+    <SolidColorBrush x:Key="UserBubbleFg" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="VeraBubble" Color="#1D1A27" />
+    <SolidColorBrush x:Key="VeraBubbleLine" Color="#2F2A3D" />
     <LinearGradientBrush x:Key="AccentGrad" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Offset="0" Color="#E0479A" />
         <GradientStop Offset="1" Color="#9B5CF0" />
@@ -67,10 +74,15 @@
         <Setter Property="ui:Ui.Radius" Value="9" />
     </Style>
 
+    <!-- «стикер»: яркая заливка, тёмная обводка, жирный текст — как спрайты Веры -->
     <Style x:Key="Btn.Primary" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
         <Setter Property="Background" Value="{DynamicResource AccentGrad}" />
-        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Ink}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+        <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="Padding" Value="14,8" />
+        <Setter Property="ui:Ui.Radius" Value="10" />
     </Style>
 
     <Style x:Key="Btn.Ghost" TargetType="Button" BasedOn="{StaticResource Btn.Base}">
@@ -96,7 +108,7 @@
                 <Setter Property="Background" Value="{DynamicResource Bg3}" />
             </Trigger>
             <Trigger Property="ui:Ui.Active" Value="True">
-                <Setter Property="Foreground" Value="White" />
+                <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
                 <Setter Property="Background" Value="{DynamicResource Accent}" />
             </Trigger>
         </Style.Triggers>
@@ -131,8 +143,10 @@
         <Setter Property="Height" Value="38" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="{DynamicResource AccentGrad}" />
-        <Setter Property="Foreground" Value="White" />
-        <Setter Property="ui:Ui.Radius" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Ink}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+        <Setter Property="ui:Ui.Radius" Value="12" />
         <Style.Triggers>
             <Trigger Property="ui:Ui.Active" Value="True">
                 <Setter Property="Background" Value="{DynamicResource Bg4}" />
@@ -167,7 +181,8 @@
             </Trigger>
             <Trigger Property="IsChecked" Value="True">
                 <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
-                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
+                <Setter Property="FontWeight" Value="Bold" />
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -203,16 +218,17 @@
     </Style>
 
     <Style x:Key="Pet.ButtonPrimary" TargetType="Button" BasedOn="{StaticResource Pet.Button}">
-        <Setter Property="Background" Value="#E0479A" />
-        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Background" Value="{DynamicResource Accent}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
     </Style>
 
     <!-- ================================================================ карточки -->
+    <!-- карточка-«стикер»: нижняя грань толще, будто приклеена к странице -->
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource Bg2}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="BorderThickness" Value="1.5,1.5,1.5,3.5" />
+        <Setter Property="CornerRadius" Value="14" />
         <Setter Property="Padding" Value="14" />
         <Setter Property="Margin" Value="0,0,0,12" />
     </Style>

@@ -37,6 +37,7 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 
@@ -62,7 +63,7 @@
     </ItemGroup>
     <Delete Files="@(_VeraForeignFile)" />
     <RemoveDir Directories="@(_VeraForeignDir->'$(PublishDir)runtimes\%(Identity)')" />
-    <Message Importance="high" Text="Вера: убрано чужих нативных файлов: @(_VeraForeignFile->Count())" />
+    <Message Importance="high" Text="Вера: убрано чужих нативных файлов: @(_VeraForeignFile-&gt;Count())" />
   </Target>
 
   <!-- Silero VAD (2 МБ) лежит рядом с exe: его читает ONNX Runtime по пути -->

@@ -35,6 +35,7 @@ public sealed class ChatPanel : DockPanel
     {
         public required Border Bubble;
         public required WrapPanel Tools;
+        public Border? Avatar;
         public readonly StringBuilder Text = new();
         public readonly List<Chip> Chips = new();
         public int LastStep = -1;
@@ -163,14 +164,25 @@ public sealed class ChatPanel : DockPanel
 
     public bool Busy { get; private set; }
 
+    /// <summary>Скин сменился — перерисовать аватарки и картинку пустого чата.</summary>
+    public void OnSkinChanged()
+    {
+        if (_empty is Panel p && p.Children.Count > 0 && p.Children[0] is Image img)
+        {
+            var fresh = SkinArt.Full(_host.Core.Settings.Current.Skin, "smug", 150);
+            img.Source = fresh.Source;
+            RenderOptions.SetBitmapScalingMode(img, RenderOptions.GetBitmapScalingMode(fresh));
+        }
+        if (!Busy) LoadHistory();
+    }
+
     public void FocusInput() => Dispatcher.BeginInvoke(() => { _input.Focus(); Keyboard.Focus(_input); }, DispatcherPriority.Input);
 
     // ================================================================== empty state
 
     private FrameworkElement BuildEmpty()
     {
-        var art = new Image { Source = SpriteSheet.LoadImage("/assets/vera/preview.png"), Width = 128, Height = 144, HorizontalAlignment = HorizontalAlignment.Center };
-        RenderOptions.SetBitmapScalingMode(art, BitmapScalingMode.NearestNeighbor);
+        var art = SkinArt.Full(_host.Core.Settings.Current.Skin, "smug", 150);
         art.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 6, Direction = 270, Opacity = 0.3 };
         var p = new TextBlock { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 12, 0, 0), LineHeight = 21 };
         p.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
@@ -246,22 +258,25 @@ public sealed class ChatPanel : DockPanel
             frame.SetResourceReference(Border.BorderBrushProperty, "Line");
             body.Children.Add(frame);
         }
-        var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White, LineHeight = 21 };
+        var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, LineHeight = 21 };
+        tb.SetResourceReference(TextBlock.ForegroundProperty, "UserBubbleFg");
         var inner = new StackPanel();
         inner.Children.Add(tb);
         if (hasImage && imageB64 is null)
-            inner.Children.Add(new TextBlock { Text = "📎 изображение", FontSize = 11, Foreground = Brushes.White, Opacity = 0.85 });
+            inner.Children.Add(new TextBlock { Text = "📎 изображение", FontSize = 11, Opacity = 0.85 }.Res(TextBlock.ForegroundProperty, "UserBubbleFg"));
         foreach (var d in docs ?? Array.Empty<string>())
-            inner.Children.Add(new TextBlock { Text = "📄 " + d, FontSize = 11, Foreground = Brushes.White, Opacity = 0.9, TextTrimming = TextTrimming.CharacterEllipsis });
+            inner.Children.Add(new TextBlock { Text = "📄 " + d, FontSize = 11, Opacity = 0.9, TextTrimming = TextTrimming.CharacterEllipsis }.Res(TextBlock.ForegroundProperty, "UserBubbleFg"));
         var bubble = new Border
         {
-            CornerRadius = new CornerRadius(14, 14, 4, 14),
-            Padding = new Thickness(12, 9, 12, 9),
+            CornerRadius = new CornerRadius(16, 16, 4, 16),
+            Padding = new Thickness(13, 9, 13, 10),
+            BorderThickness = new Thickness(1.5),
             Child = inner,
             HorizontalAlignment = HorizontalAlignment.Right,
             ContextMenu = CopyMenu(() => text),
         };
         bubble.SetResourceReference(Border.BackgroundProperty, "AccentGrad");
+        bubble.SetResourceReference(Border.BorderBrushProperty, "Ink");
         body.Children.Add(bubble);
         var meta = Ui.Muted(TimeStr(time), 10.5);
         meta.HorizontalAlignment = HorizontalAlignment.Right;
@@ -271,22 +286,20 @@ public sealed class ChatPanel : DockPanel
         UpdateEmpty();
     }
 
-    private VeraMessageView AddVera(DateTimeOffset time)
+    private VeraMessageView AddVera(DateTimeOffset time, string? emotion = null)
     {
-        var avatarImg = new Image { Source = SpriteSheet.LoadImage("/assets/icon.png"), Width = 30, Height = 30 };
-        RenderOptions.SetBitmapScalingMode(avatarImg, BitmapScalingMode.NearestNeighbor);
-        var avatar = new Border { CornerRadius = new CornerRadius(8), Child = avatarImg, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 8, 0) };
-        avatar.SetResourceReference(Border.BackgroundProperty, "AccentSoft");
+        var avatar = SkinArt.Avatar(_host.Core.Settings.Current.Skin, emotion ?? "neutral", 34);
+        avatar.Margin = new Thickness(0, 2, 8, 0);
         var tools = new WrapPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 5) };
         var bubble = new Border
         {
-            CornerRadius = new CornerRadius(4, 14, 14, 14),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 9, 12, 9),
+            CornerRadius = new CornerRadius(4, 16, 16, 16),
+            BorderThickness = new Thickness(1.5, 1.5, 1.5, 3),
+            Padding = new Thickness(13, 9, 13, 10),
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        bubble.SetResourceReference(Border.BackgroundProperty, "Bg2");
-        bubble.SetResourceReference(Border.BorderBrushProperty, "Line");
+        bubble.SetResourceReference(Border.BackgroundProperty, "VeraBubble");
+        bubble.SetResourceReference(Border.BorderBrushProperty, "VeraBubbleLine");
         var meta = Ui.Muted(TimeStr(time), 10.5);
         meta.Margin = new Thickness(4, 4, 0, 0);
         var body = new StackPanel();
@@ -297,7 +310,7 @@ public sealed class ChatPanel : DockPanel
         row.Margin = new Thickness(0, 0, 0, 12);
         _messages.Children.Add(row);
         UpdateEmpty();
-        var view = new VeraMessageView { Bubble = bubble, Tools = tools };
+        var view = new VeraMessageView { Bubble = bubble, Tools = tools, Avatar = avatar };
         bubble.ContextMenu = CopyMenu(() => view.Text.ToString());
         return view;
     }
@@ -397,7 +410,7 @@ public sealed class ChatPanel : DockPanel
             if (m.Role == "user") AddUser(m.Text, m.HasImage, null, m.Time, m.Documents);
             else
             {
-                var v = AddVera(m.Time);
+                var v = AddVera(m.Time, m.Emotion);
                 v.Text.Append(m.Text);
                 foreach (var t in m.Tools) v.Chips.Add(new Chip { Id = t.Id, Name = t.Name, Label = t.Label, IsError = t.IsError });
                 RenderVera(v, false);
@@ -451,6 +464,12 @@ public sealed class ChatPanel : DockPanel
                 v.Text.Append(d.Delta);
                 v.Dirty = true;
                 QueueRender();
+                break;
+            }
+            case EmotionChanged em:
+            {
+                if (_live.TryGetValue(em.TurnId, out var v) && v.Avatar is not null)
+                    SkinArt.SetAvatar(v.Avatar, _host.Core.Settings.Current.Skin, em.Emotion);
                 break;
             }
             case TextReplaced tr:

@@ -124,3 +124,22 @@ var wake = local.CreateWakeWord();                             // Vosk; null —
 - Модель "local" в `Settings.Models["local"]` — полный путь к `.gguf` (или id из каталога).
 - Ускоритель (`Local.Backend`) выбирается один раз за запуск: `LlamaEngine.BackendLocked`, `ActiveBackend`.
 - Настройки: `SettingsService.Export()` / `Import(json)` / `Reset()`; наборы — `SettingsPresets.All`, `MissingKeys(id, has)`.
+
+## Синхронизация (`Vera.Core.Sync`, v2.3)
+
+- `core.Sync` (`SyncService`): `DeviceId`, `DeviceName`, `Peers`, события `Changed`, `Synced`;
+  `LastActive` — платформа сообщает, когда пользователь был активен.
+- **ПК:**
+  - `new SyncServer(core.Sync).Start(port)`;
+  - `StartPairing(SyncNet.LocalAddresses(), port)` → `PairingOffer.Uri` для QR;
+  - `Unpair(id)`.
+- **Телефон:**
+  - `await core.Sync.PairAsync(qrText)` — привязка и первая синхронизация;
+  - `await core.Sync.SyncAsync(peer)` — при открытии, по кнопке, в фоне;
+  - ПК ищется по адресам из QR, потом `SyncNet.DiscoverAsync`.
+- **Напоминания:** `core.Sync.ShouldRingHere(now)` — звенеть ли здесь (настройка `Sync.RingOn`).
+- **Чат:** ходы приходят в историю агента, событие `Agent.HistoryChanged` — перечитать чат.
+- **Скины:**
+  - `Skins.Pose(skin, emotion, mode, posture, dragging, mouthOpen)`;
+  - `FramePose.Folder` — поза из другого скина;
+  - `Skins.AccentFor(skin)` — тема "gold" | "pink".

@@ -34,6 +34,7 @@ public sealed partial class SettingsPanel
         new("voice", "Голос"),
         new("vera", "Вера"),
         new("pc", "ПК"),
+        new("sync", "Телефон"),
         new("system", "Система"),
     };
 
@@ -116,7 +117,7 @@ public sealed partial class SettingsPanel
             if (active)
             {
                 b.SetResourceReference(Control.BackgroundProperty, "Accent");
-                b.Foreground = Brushes.White;
+                b.SetResourceReference(Control.ForegroundProperty, "OnAccent");
             }
             else
             {
@@ -607,4 +608,109 @@ public sealed partial class SettingsPanel
     }
 
     private IEnumerable<(string, string)> SkinOptions() => Skins.All.Select(s => (s.Id, s.Title));
+
+    // ================================================================== sync
+
+    private Border SyncCard()
+    {
+        var host = _host.SyncHost;
+        var status = Ui.Text("", 12.5);
+        _refreshers.Add(() =>
+        {
+            if (!S.Sync.Enabled)
+            {
+                status.Text = "Выключено — телефон не сможет подключиться.";
+                status.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+            }
+            else if (host.Running)
+            {
+                var ips = Vera.Core.Sync.SyncNet.LocalAddresses();
+                status.Text = $"✓ Жду телефон: {(ips.Count > 0 ? ips[0] : "этот ПК")}, порт {host.Port}" + (host.Error is { } w ? " · " + w : "");
+                status.SetResourceReference(TextBlock.ForegroundProperty, "Ok");
+            }
+            else
+            {
+                status.Text = "✗ " + (host.Error ?? "Сервер не запустился");
+                status.SetResourceReference(TextBlock.ForegroundProperty, "Err");
+            }
+        });
+
+        var name = new TextBox { Tag = "Имя этого ПК для телефона" };
+        _refreshers.Add(() => { if (!name.IsKeyboardFocusWithin) name.Text = Core.Sync.DeviceName; });
+        name.LostKeyboardFocus += (_, _) => { if (name.Text.Trim().Length > 0 && name.Text.Trim() != Core.Sync.DeviceName) Core.Sync.DeviceName = name.Text; };
+
+        var pair = Ui.Button("Привязать телефон", "Btn.Primary", null, ShowPairing);
+        pair.HorizontalAlignment = HorizontalAlignment.Left;
+        pair.Margin = new Thickness(0, 6, 0, 8);
+
+        var peers = new StackPanel();
+        _refreshers.Add(() =>
+        {
+            peers.Children.Clear();
+            foreach (var p in Core.Sync.Peers)
+            {
+                var peer = p;
+                var body = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                body.Children.Add(Ui.Text("📱 " + p.Name, 13.5, "Fg", FontWeights.SemiBold));
+                body.Children.Add(Ui.Muted(p.LastSync is { } t ? "Синхронизировано " + Vera.Core.RuText.Relative(t) : "Ещё не синхронизировался", 11.5));
+                var rm = Ui.Button("Отвязать", "Btn.GhostSmall", null, () =>
+                {
+                    if (!ConfirmDialog.Ask(_window, "Отвязать телефон?", $"«{peer.Name}» больше не сможет синхронизироваться с этим ПК. Данные на обоих устройствах останутся.",
+                            okText: "Отвязать", danger: true)) return;
+                    Core.Sync.Unpair(peer.Id);
+                });
+                rm.VerticalAlignment = VerticalAlignment.Center;
+                var frame = RemindersPanel.ItemFrame(Ui.Row(new UIElement[] { body, rm }, 8, 0));
+                frame.Margin = new Thickness(0, 0, 0, 6);
+                frame.Padding = new Thickness(10, 8, 8, 8);
+                peers.Children.Add(frame);
+            }
+            if (peers.Children.Count == 0) peers.Children.Add(Ui.Muted("Телефон ещё не привязан.", 12));
+        });
+
+        var ring = Combo(new[]
+        {
+            ("both", "На обоих устройствах"),
+            ("active", "Там, где я сейчас (ПК — если трогал его последние 5 минут)"),
+            ("pc", "Только на ПК"),
+            ("phone", "Только на телефоне"),
+        }, s => s.Sync.RingOn, (s, v) => s.Sync.RingOn = v);
+        var keysNote = Ui.Note("Ключи передаются только по зашифрованному каналу и только если эта галочка стоит и на телефоне. Заполняются лишь недостающие.");
+        ShowIf(keysNote, s => s.Sync.Keys);
+
+        return Ui.Card(
+            Ui.Title("📱 Синхронизация с телефоном"),
+            Ui.Muted("Память, напоминания, история чата, характер и скин — одинаковые на ПК и телефоне. Связь только в домашней сети, всё шифруется. " +
+                     "Нужна Вера для Android новой версии — её соберём следующей.", 12),
+            Toggle("Принимать телефон в домашней сети", s => s.Sync.Enabled, (s, v) => s.Sync.Enabled = v,
+                "(Windows один раз спросит разрешение брандмауэра — выбери «Частные сети»)"),
+            status,
+            Ui.Field("Имя этого ПК", name),
+            pair,
+            peers,
+            Toggle("Синхронизировать историю чата", s => s.Sync.Chat, (s, v) => s.Sync.Chat = v),
+            Toggle("Передавать API-ключи", s => s.Sync.Keys, (s, v) => s.Sync.Keys = v),
+            keysNote,
+            Ui.Field("Где звенят напоминания", ring));
+    }
+
+    private void ShowPairing()
+    {
+        if (!S.Sync.Enabled) Save(s => s.Sync.Enabled = true);
+        _host.SyncHost.Apply();
+        if (!_host.SyncHost.Running)
+        {
+            _window.Toast("Сервер синхронизации не запустился: " + _host.SyncHost.Error, true);
+            return;
+        }
+        var ips = Vera.Core.Sync.SyncNet.LocalAddresses();
+        if (ips.Count == 0)
+        {
+            _window.Toast("ПК не подключён к сети — подключи кабель или Wi-Fi.", true);
+            return;
+        }
+        var offer = Core.Sync.StartPairing(ips, _host.SyncHost.Port);
+        PairingDialog.Show(_window, Core, offer);
+        Refresh();
+    }
 }

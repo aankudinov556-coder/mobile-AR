@@ -410,6 +410,11 @@ public sealed partial class PetWindow : Window
 
         _skin = Skins.Get(S.Skin);
         var pixel = _skin.PixelArt;
+        // акцент пузыря: золото нимба для halo/чиби, розовый для пиксельной Веры
+        var gold = Skins.AccentFor(_skin.Id) == "gold";
+        _bubbleHead.Foreground = new SolidColorBrush(gold ? Color.FromRgb(0xA8, 0x7A, 0x00) : PetAccent);
+        var bar = new SolidColorBrush(gold ? Color.FromRgb(0xF5, 0xCF, 0x3A) : PetAccent);
+        foreach (var r in _bars) r.Fill = bar;
         RenderOptions.SetBitmapScalingMode(_sprite, pixel ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         RenderOptions.SetEdgeMode(_sprite, pixel ? EdgeMode.Aliased : EdgeMode.Unspecified);
         _veraBox.Width = _sprite.Width = 64 * _scale;

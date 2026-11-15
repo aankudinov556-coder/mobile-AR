@@ -78,9 +78,10 @@ public sealed class AppHost : IToolHost
         Log.Init(Storage.Directory);
         Core = new VeraCore(Storage, new DpapiSecretStore(Storage), new WindowsTools(this), platform: "desktop");
         _prev = Snapshot.Of(Core.Settings.Current);
-        ThemeManager.Apply(Core.Settings.Current.Theme);
+        ThemeManager.Apply(Core.Settings.Current.Theme, Core.Settings.Current.Skin);
         Local = CreateLocalAi(Core);
         Voice = new VoiceController(Core, ui, Local);
+        SyncHost = new SyncHost(Core);
         Pet = new PetWindow(this);
         Chat = new ChatWindow(this);
     }
@@ -89,6 +90,8 @@ public sealed class AppHost : IToolHost
     public VeraCore Core { get; }
     /// <summary>Офлайн-ИИ: встроенная модель, Whisper, Piper, Silero, Vosk (null — не удалось инициализировать).</summary>
     public LocalAiService? Local { get; }
+    /// <summary>Сервер синхронизации с телефоном.</summary>
+    public SyncHost SyncHost { get; }
 
     /// <summary>Папка моделей: %LOCALAPPDATA%\VeraAssistant\models (не в роуминге — файлы большие).</summary>
     public static string ModelsDirectory =>
@@ -142,6 +145,16 @@ public sealed class AppHost : IToolHost
         Core.Settings.Changed += _ => OnUi(OnSettingsChanged);
         Core.Secrets.Changed += () => OnUi(Chat.OnSecretsChanged);
         if (Local is not null) Local.Llm.Status += msg => OnUi(() => Chat.ChatPanel.SetStatus(msg));
+        // синхронизация: пришёл чат с телефона — перечитать; статус — в настройки
+        Core.Agent.HistoryChanged += () => OnUi(() => { if (!Core.Agent.IsBusy) Chat.ChatPanel.LoadHistory(); });
+        Core.Sync.Changed += () => OnUi(() => Chat.SettingsPanel.Refresh());
+        Core.Sync.Synced += r => OnUi(() =>
+        {
+            if (r.Received > 0 && Chat.IsVisible) Chat.Toast($"📱 {r.PeerName}: получено изменений — {r.Received}");
+            Chat.UpdateStatus();
+        });
+        SyncHost.Changed += () => OnUi(() => Chat.SettingsPanel.Refresh());
+        SyncHost.Apply();
 
         Pet.Prepare();
         if (S.Pet.Visible) Pet.Show();
@@ -191,7 +204,7 @@ public sealed class AppHost : IToolHost
     private void OnUserPreference(object? sender, UserPreferenceChangedEventArgs e)
     {
         if (e.Category is UserPreferenceCategory.General or UserPreferenceCategory.Color or UserPreferenceCategory.VisualStyle)
-            _ui.BeginInvoke(() => { if ((S.Theme ?? "auto") == "auto") ThemeManager.Apply("auto"); });
+            _ui.BeginInvoke(() => { if ((S.Theme ?? "auto") == "auto") ThemeManager.Apply("auto", null); });
     }
 
     // ================================================================== settings
@@ -209,9 +222,10 @@ public sealed class AppHost : IToolHost
             else Pet.Hide();
         }
         if (now.Autostart != prev.Autostart) Autostart.Apply(now.Autostart);
-        if (now.Theme != prev.Theme) ThemeManager.Apply(now.Theme);
+        if (now.Theme != prev.Theme) ThemeManager.Apply(now.Theme, S.Skin);
         if (now.Voice != prev.Voice || now.Mic != prev.Mic) Voice.SyncSettings();
-        if (now.Skin != prev.Skin) Pet.ApplySettings();
+        if (now.Skin != prev.Skin) { Pet.ApplySettings(); ThemeManager.Apply(S.Theme, S.Skin); Chat.OnSkinChanged(); }
+        SyncHost.Apply();
         Chat.OnSettingsChanged();
     }
 
@@ -364,6 +378,8 @@ public sealed class AppHost : IToolHost
     {
         try
         {
+            // «где звенеть»: телефон привязан и напоминание должно прозвенеть только там
+            if (!Core.Sync.ShouldRingHere(DateTimeOffset.Now)) return;
             var phrase = Core.ReminderPhrase(r, missed);
             if (S.Reminders.Notification && !(_notifier?.ShowReminder(r, missed) ?? false))
                 _tray?.Balloon(missed ? "⏰ Пропущенное напоминание" : "⏰ Вера напоминает", r.Text);
@@ -474,6 +490,7 @@ public sealed class AppHost : IToolHost
             Core.Reminders.Stop();
             Voice.Dispose();
             Local?.Dispose();
+            SyncHost.Dispose();
             _hotkeys?.Dispose();
             _tray?.Dispose();
             Core.Dispose();

@@ -86,6 +86,7 @@ public sealed partial class SettingsPanel : Grid
         Add(root, HotkeysCard(), "pc");
         Add(root, CapabilitiesCard(), "pc");
         Add(root, AppsCard(), "pc");
+        Add(root, SyncCard(), "sync");
         Add(root, UsageCard(), "system");
         Add(root, SystemCard(), "system");
 

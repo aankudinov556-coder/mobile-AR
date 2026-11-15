@@ -1,3 +1,4 @@
+using Vera.Core;
 using Android.Content;
 using Android.Media;
 using Android.Media.Audiofx;
@@ -26,7 +27,7 @@ public sealed class MicCapture
     {
         if (_run) return;
         var min = AudioRecord.GetMinBufferSize(Rate, ChannelIn.Mono, Encoding.Pcm16bit);
-        if (min <= 0) throw new InvalidOperationException("Микрофон не поддерживает 16 кГц");
+        if (min <= 0) throw new InvalidOperationException(L10n.T("Микрофон не поддерживает 16 кГц"));
         var rec = new AudioRecord(AudioSource.VoiceRecognition, Rate, ChannelIn.Mono, Encoding.Pcm16bit, Math.Max(min, Rate / 5 * 2));
         if (rec.State != State.Initialized)
         {
@@ -35,7 +36,7 @@ public sealed class MicCapture
             if (rec.State != State.Initialized)
             {
                 rec.Release();
-                throw new InvalidOperationException("Не удалось открыть микрофон");
+                throw new InvalidOperationException(L10n.T("Не удалось открыть микрофон"));
             }
         }
         _rec = rec;
@@ -141,12 +142,12 @@ public sealed class DeviceRecognizer : Java.Lang.Object, IRecognitionListener
             SpeechRecognizerError.NoMatch => "short",
             SpeechRecognizerError.SpeechTimeout => "timeout",
             SpeechRecognizerError.Client => "cancel",
-            SpeechRecognizerError.InsufficientPermissions => "Нет разрешения на микрофон",
-            SpeechRecognizerError.Network or SpeechRecognizerError.NetworkTimeout => "Нет сети для распознавания речи",
+            SpeechRecognizerError.InsufficientPermissions => L10n.T("Нет разрешения на микрофон"),
+            SpeechRecognizerError.Network or SpeechRecognizerError.NetworkTimeout => L10n.T("Нет сети для распознавания речи"),
             SpeechRecognizerError.RecognizerBusy => "busy",
-            SpeechRecognizerError.Audio => "Ошибка записи звука",
-            SpeechRecognizerError.Server => "Сервис распознавания недоступен",
-            _ => "Ошибка распознавания (" + (int)error + ")",
+            SpeechRecognizerError.Audio => L10n.T("Ошибка записи звука"),
+            SpeechRecognizerError.Server => L10n.T("Сервис распознавания недоступен"),
+            _ => L10n.T("Ошибка распознавания (") + (int)error + ")",
         };
         Failed?.Invoke(reason);
     }
@@ -192,7 +193,7 @@ public sealed class Mp3Player
             mp.Prepare();
             mp.SetVolume(volume, volume);
             mp.Completion += (_, _) => tcs.TrySetResult();
-            mp.Error += (_, e) => { e.Handled = true; tcs.TrySetException(new InvalidOperationException("Ошибка воспроизведения " + e.What)); };
+            mp.Error += (_, e) => { e.Handled = true; tcs.TrySetException(new InvalidOperationException(L10n.T("Ошибка воспроизведения ") + e.What)); };
             if (Math.Abs(rate - 1f) > 0.01f)
             {
                 try { mp.PlaybackParams = mp.PlaybackParams.SetSpeed(Math.Clamp(rate, 0.5f, 2f)); } catch { }
@@ -325,8 +326,8 @@ public sealed class SystemVoice : Java.Lang.Object, TextToSpeech.IOnInitListener
             var voices = _tts.Voices?.ToList() ?? new List<Voice>();
             return voices
                 .Where(v => v.Locale is not null && !(v.Features?.Contains(TextToSpeech.Engine.KeyFeatureNotInstalled) ?? false))
-                .OrderBy(v => v.Locale!.Language == "ru" ? 0 : 1).ThenBy(v => v.Locale!.ToString()).ThenBy(v => v.Name)
-                .Select(v => (v.Name ?? "", $"{v.Locale!.DisplayName} — {v.Name}{(v.IsNetworkConnectionRequired ? " (сеть)" : "")}"))
+                .OrderBy(v => v.Locale!.Language == (L10n.English ? "en" : "ru") ? 0 : 1).ThenBy(v => v.Locale!.ToString()).ThenBy(v => v.Name)
+                .Select(v => (v.Name ?? "", $"{v.Locale!.DisplayName} — {v.Name}{(v.IsNetworkConnectionRequired ? L10n.T(" (сеть)") : "")}"))
                 .ToList();
         }
         catch { return Array.Empty<(string, string)>(); }
@@ -335,7 +336,7 @@ public sealed class SystemVoice : Java.Lang.Object, TextToSpeech.IOnInitListener
     public async Task SpeakAsync(string text, string voiceName, float rate, float volume, CancellationToken ct)
     {
         if (!await EnsureAsync().ConfigureAwait(false) || _tts is null)
-            throw new InvalidOperationException("Системный синтез речи недоступен. Установи голосовой движок в настройках Android → Синтез речи.");
+            throw new InvalidOperationException(L10n.T("Системный синтез речи недоступен. Установи голосовой движок в настройках Android → Синтез речи."));
         var id = Guid.NewGuid().ToString("N");
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_pending) _pending[id] = tcs;
@@ -346,15 +347,15 @@ public sealed class SystemVoice : Java.Lang.Object, TextToSpeech.IOnInitListener
             if (voice is not null) _tts.SetVoice(voice);
             else
             {
-                var res = _tts.SetLanguage(new Locale("ru", "RU"));
+                var res = _tts.SetLanguage(L10n.English ? new Locale("en", "US") : new Locale("ru", "RU"));
                 if (res is LanguageAvailableResult.MissingData or LanguageAvailableResult.NotSupported)
-                    tcs.TrySetException(new InvalidOperationException("Нет русского системного голоса — установи его в настройках Android → Синтез речи."));
+                    tcs.TrySetException(new InvalidOperationException(L10n.English ? "No English system voice — install one in Android settings → Text-to-speech." : "Нет русского системного голоса — установи его в настройках Android → Синтез речи."));
             }
             _tts.SetSpeechRate(Math.Clamp(rate, 0.5f, 2f));
             var p = new Bundle();
             p.PutFloat(TextToSpeech.Engine.KeyParamVolume, Math.Clamp(volume, 0f, 1f));
             if (!tcs.Task.IsCompleted && _tts.Speak(text, QueueMode.Add, p, id) != OperationResult.Success)
-                tcs.TrySetException(new InvalidOperationException("Системный голос не смог произнести текст"));
+                tcs.TrySetException(new InvalidOperationException(L10n.T("Системный голос не смог произнести текст")));
         }).ConfigureAwait(false);
         using var reg = ct.Register(() => { Stop(); tcs.TrySetCanceled(); });
         try { await tcs.Task.ConfigureAwait(false); }
@@ -385,8 +386,8 @@ public sealed class SystemVoice : Java.Lang.Object, TextToSpeech.IOnInitListener
         public override void OnStart(string? utteranceId) { }
         public override void OnDone(string? utteranceId) => _owner.Done(utteranceId, null);
         [Obsolete]
-        public override void OnError(string? utteranceId) => _owner.Done(utteranceId, new InvalidOperationException("Ошибка системного голоса"));
-        public override void OnError(string? utteranceId, TextToSpeechError errorCode) => _owner.Done(utteranceId, new InvalidOperationException("Ошибка системного голоса (" + errorCode + ")"));
+        public override void OnError(string? utteranceId) => _owner.Done(utteranceId, new InvalidOperationException(L10n.T("Ошибка системного голоса")));
+        public override void OnError(string? utteranceId, TextToSpeechError errorCode) => _owner.Done(utteranceId, new InvalidOperationException(L10n.T("Ошибка системного голоса (") + errorCode + ")"));
         public override void OnStop(string? utteranceId, bool interrupted) => _owner.Done(utteranceId, null);
     }
 }

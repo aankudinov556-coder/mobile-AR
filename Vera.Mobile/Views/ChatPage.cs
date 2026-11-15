@@ -100,7 +100,7 @@ public sealed class ChatPage : ContentPage
     {
         _speech = App.Speech;
         _voice = App.Voice;
-        Ui.StylePage(this, "Вера");
+        Ui.StylePage(this, L10n.T("Вера"));
         NavigationPage.SetHasNavigationBar(this, false);
 
         _unit = VeraView.PickUnit(DeviceDisplay.MainDisplayInfo.Density);
@@ -127,7 +127,7 @@ public sealed class ChatPage : ContentPage
         {
             Spacing = 0,
             VerticalOptions = LayoutOptions.Center,
-            Children = { Ui.Heading("Вера", 22), statusRow },
+            Children = { Ui.Heading(L10n.T("Вера"), 22), statusRow },
         };
         _remBadgeText = new Label
         {
@@ -162,7 +162,7 @@ public sealed class ChatPage : ContentPage
         {
             Children =
             {
-                HeadBtn(Ui.SquareIcon("ic_bell.png", async (_, _) => await OpenPage(new RemindersPage()), "Напоминания")),
+                HeadBtn(Ui.SquareIcon("ic_bell.png", async (_, _) => await OpenPage(new RemindersPage()), L10n.T("Напоминания"))),
                 _remBadge,
             },
         };
@@ -172,9 +172,9 @@ public sealed class ChatPage : ContentPage
             VerticalOptions = LayoutOptions.Center,
             Children =
             {
-                HeadBtn(Ui.SquareIcon("ic_more.png", async (_, _) => await MoreMenuAsync(), "Ещё")),
+                HeadBtn(Ui.SquareIcon("ic_more.png", async (_, _) => await MoreMenuAsync(), L10n.T("Ещё"))),
                 remBtn,
-                HeadBtn(Ui.SquareIcon("ic_gear.png", async (_, _) => await OpenPage(new SettingsPage()), "Настройки")),
+                HeadBtn(Ui.SquareIcon("ic_gear.png", async (_, _) => await OpenPage(new SettingsPage()), L10n.T("Настройки"))),
             },
         };
         var header = new Grid
@@ -250,7 +250,7 @@ public sealed class ChatPage : ContentPage
         // ------------------------------------------------ панель ввода
         _input = new Editor
         {
-            Placeholder = "Напиши Вере…",
+            Placeholder = L10n.T("Напиши Вере…"),
             PlaceholderColor = Ui.Faint,
             TextColor = Ui.Text,
             FontSize = 15,
@@ -277,7 +277,7 @@ public sealed class ChatPage : ContentPage
             BorderWidth = 2,
             VerticalOptions = LayoutOptions.End,
         };
-        SemanticProperties.SetDescription(plusBtn, "Приложить файл");
+        SemanticProperties.SetDescription(plusBtn, L10n.T("Приложить файл"));
         plusBtn.Clicked += async (_, _) => await AttachMenuAsync();
         _sendBtn = new ImageButton
         {
@@ -291,7 +291,7 @@ public sealed class ChatPage : ContentPage
             BorderWidth = 2.5,
             VerticalOptions = LayoutOptions.End,
         };
-        SemanticProperties.SetDescription(_sendBtn, "Сказать голосом");
+        SemanticProperties.SetDescription(_sendBtn, L10n.T("Сказать голосом"));
         _sendBtn.Clicked += (_, _) => OnActionButton();
 
         var composerGrid = new Grid
@@ -391,7 +391,7 @@ public sealed class ChatPage : ContentPage
             else if (_vera.Mode == PetMode.Talking && !_busy) _vera.Mode = PetMode.Idle;
             UpdateSendIcon();
         });
-        _speech.Error += msg => MainThread.BeginInvokeOnMainThread(() => ShowBubble(msg, "🔊 голос", ms: 8000));
+        _speech.Error += msg => MainThread.BeginInvokeOnMainThread(() => ShowBubble(msg, L10n.T("🔊 голос"), ms: 8000));
 
         _voice.StateChanged += OnVoiceState;
         _voice.Level += l => _micLevel = l;
@@ -467,7 +467,7 @@ public sealed class ChatPage : ContentPage
             _vera.SetEmotion(noKey ? "angry" : "smug", 7000);
             _vera.Hop();
             if (noKey)
-                ShowBubble(text, null, new[] { ("Открыть настройки", true, (Action)(async () => { HideBubble(); await OpenPage(new SettingsPage()); })) }, ms: 15000);
+                ShowBubble(text, null, new[] { (L10n.T("Открыть настройки"), true, (Action)(async () => { HideBubble(); await OpenPage(new SettingsPage()); })) }, ms: 15000);
             else ShowBubble(text, ms: 9000);
         }
         catch { }
@@ -503,25 +503,25 @@ public sealed class ChatPage : ContentPage
         var s = Core.Settings.Current;
         var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
         _statusDot.IsVisible = false;
-        if (_busy) { _status.Text = "печатает…"; _status.TextColor = Ui.AccentText; return; }
-        if (_voice.IsCommandActive) { _status.Text = "слушает…"; _status.TextColor = Ui.AccentText; return; }
+        if (_busy) { _status.Text = L10n.T("печатает…"); _status.TextColor = Ui.AccentText; return; }
+        if (_voice.IsCommandActive) { _status.Text = L10n.T("слушает…"); _status.TextColor = Ui.AccentText; return; }
         _status.TextColor = Ui.Muted;
         var pc = Core.Sync.Peers.OrderByDescending(p => p.LastSync ?? DateTimeOffset.MinValue).FirstOrDefault();
-        if (!Core.ProviderReady) _status.Text = $"нет ключа {title} — открой настройки";
-        else if (_vera.Mode == PetMode.Sleeping) _status.Text = "спит… тапни, чтобы разбудить";
+        if (!Core.ProviderReady) _status.Text = L10n.F("нет ключа {0} — открой настройки", title);
+        else if (_vera.Mode == PetMode.Sleeping) _status.Text = L10n.T("спит… тапни, чтобы разбудить");
         else if (pc is not null)
         {
             // привязан ПК: «ПК «Дом» · синхр. только что»; точка зелёная, если синхронизация свежая
             var fresh = pc.LastSync is { } at && DateTimeOffset.Now - at < TimeSpan.FromHours(1);
             _statusDot.Color = fresh ? Ui.Ok : Ui.Faint;
             _statusDot.IsVisible = true;
-            _status.Text = $"ПК «{pc.Name}» · " + (pc.LastSync is { } t ? "синхр. " + Ago(t) : "ещё не синхронизирована");
+            _status.Text = L10n.F("ПК «{0}» · ", pc.Name) + (pc.LastSync is { } t ? L10n.T("синхр. ") + Ago(t) : L10n.T("ещё не синхронизирована"));
         }
         else _status.Text = $"{title} · {s.CurrentModel}";
     }
 
     private static string Ago(DateTimeOffset t) =>
-        DateTimeOffset.Now - t < TimeSpan.FromMinutes(1) ? "только что" : RuText.Relative(t);
+        DateTimeOffset.Now - t < TimeSpan.FromMinutes(1) ? L10n.T("только что") : RuText.Relative(t);
 
     private void UpdateBadge()
     {
@@ -579,10 +579,10 @@ public sealed class ChatPage : ContentPage
         };
         foreach (var (label, text) in new[]
                  {
-                     ("Напомни через 20 минут…", "Напомни мне через 20 минут сделать перерыв"),
-                     ("Погода на завтра", "Какая погода в Москве на завтра?"),
-                     ("Включи фонарик", "Включи фонарик"),
-                     ("Открой YouTube", "Открой YouTube"),
+                     (L10n.T("Напомни через 20 минут…"), L10n.T("Напомни мне через 20 минут сделать перерыв")),
+                     (L10n.T("Погода на завтра"), L10n.T("Какая погода в Москве на завтра?")),
+                     (L10n.T("Включи фонарик"), L10n.T("Включи фонарик")),
+                     (L10n.T("Открой YouTube"), L10n.T("Открой YouTube")),
                  })
         {
             var b = Ui.Chip(label, (_, _) => Send(text));
@@ -595,10 +595,10 @@ public sealed class ChatPage : ContentPage
             Padding = new Thickness(14, 28, 14, 0),
             Children =
             {
-                new Label { Text = "Ну что, начнём?", FontSize = 22, FontFamily = Ui.Display, TextColor = Ui.Text, HorizontalTextAlignment = TextAlignment.Center },
+                new Label { Text = L10n.T("Ну что, начнём?"), FontSize = 22, FontFamily = Ui.Display, TextColor = Ui.Text, HorizontalTextAlignment = TextAlignment.Center },
                 new Label
                 {
-                    Text = "Я Вера. Спроси что-нибудь, попроси напомнить, открыть приложение или включить фонарик. Долгий тап по мне — сказать голосом.",
+                    Text = L10n.T("Я Вера. Спроси что-нибудь, попроси напомнить, открыть приложение или включить фонарик. Долгий тап по мне — сказать голосом."),
                     FontSize = 14.5, TextColor = Ui.Muted, HorizontalTextAlignment = TextAlignment.Center,
                 },
                 chips,
@@ -622,7 +622,7 @@ public sealed class ChatPage : ContentPage
         _sumWeather.Add(_sumTemp, 0);
         _sumWeather.Add(_sumDesc, 1);
         _sumPills = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap };
-        _sumNoPills = new Label { Text = "На сегодня напоминаний нет", FontSize = 12.5, TextColor = Ui.Faint, IsVisible = false };
+        _sumNoPills = new Label { Text = L10n.T("На сегодня напоминаний нет"), FontSize = 12.5, TextColor = Ui.Faint, IsVisible = false };
         var card = new Border
         {
             BackgroundColor = Ui.Surface,
@@ -646,7 +646,7 @@ public sealed class ChatPage : ContentPage
         if (_sumCaption is null) return;
         var now = DateTimeOffset.Now;
         var h = now.Hour;
-        _sumCaption.Text = (h < 5 ? "ночь" : h < 12 ? "утро" : h < 18 ? "день" : "вечер") + " · сводка";
+        _sumCaption.Text = (h < 5 ? L10n.T("ночь") : h < 12 ? L10n.T("утро") : h < 18 ? L10n.T("день") : L10n.T("вечер")) + L10n.T(" · сводка");
 
         var city = (Core.Settings.Current.City ?? "").Trim();
         var w = city.Length > 0 && _weatherCity == city ? _weather : null;
@@ -700,11 +700,11 @@ public sealed class ChatPage : ContentPage
     {
         var d = string.IsNullOrWhiteSpace(w.Description) ? w.Place : char.ToUpper(w.Description[0]) + w.Description[1..];
         var s = $"{d}, {Signed(w.Min)}…{Signed(w.Max)}°";
-        if (w.Precip is >= 50) s += $", осадки {w.Precip}%";
-        var tip = w.Max <= 0 ? "Шарф не забудь."
-            : w.Precip is >= 60 ? "Зонт не забудь."
-            : w.Wind >= 10 ? "Ветрено — держи шапку."
-            : w.Max >= 27 ? "Жарко — возьми воды."
+        if (w.Precip is >= 50) s += L10n.F(", осадки {0}%", w.Precip);
+        var tip = w.Max <= 0 ? L10n.T("Шарф не забудь.")
+            : w.Precip is >= 60 ? L10n.T("Зонт не забудь.")
+            : w.Wind >= 10 ? L10n.T("Ветрено — держи шапку.")
+            : w.Max >= 27 ? L10n.T("Жарко — возьми воды.")
             : "";
         return s + "." + (tip.Length > 0 ? " " + tip : "");
     }
@@ -757,7 +757,7 @@ public sealed class ChatPage : ContentPage
     {
         Touch();
         const string newChat = "Новый диалог", sync = "Синхронизация с ПК", memory = "Что Вера помнит";
-        var choice = await DisplayActionSheetAsync("Ещё", "Отмена", null, newChat, sync, memory);
+        var choice = await Ui.ActionSheetAsync(this, "Ещё", null, newChat, sync, memory);
         switch (choice)
         {
             case newChat: await NewChatAsync(); break;
@@ -770,7 +770,7 @@ public sealed class ChatPage : ContentPage
     {
         Touch();
         if (!HasMessages) return;
-        var ok = await DisplayAlertAsync("Новый диалог", "Текущая переписка будет очищена (память и напоминания останутся).", "Очистить", "Отмена");
+        var ok = await DisplayAlertAsync(L10n.T("Новый диалог"), L10n.T("Текущая переписка будет очищена (память и напоминания останутся)."), L10n.T("Очистить"), L10n.T("Отмена"));
         if (!ok) return;
         _speech.Stop();
         Core.Agent.ClearHistory();
@@ -779,7 +779,7 @@ public sealed class ChatPage : ContentPage
         UpdateSendIcon();
         UpdateStatus();
         _vera.SetEmotion("happy", 4000);
-        ShowBubble("Начнём с чистого листа~", ms: 3500);
+        ShowBubble(L10n.T("Начнём с чистого листа~"), ms: 3500);
     }
 
     // ================================================================== отправка
@@ -806,13 +806,13 @@ public sealed class ChatPage : ContentPage
         {
             var title = ProviderRegistry.Known.FirstOrDefault(k => k.Id == s.Provider).Title ?? s.Provider;
             _vera.SetEmotion("angry", 5000);
-            ShowBubble(Core.Line("noKey"), null, new[] { ("Открыть настройки", true, (Action)(async () => { HideBubble(); await OpenPage(new SettingsPage()); })) }, ms: 12000);
-            Ui.Toast($"Сначала добавь ключ {title} в настройках");
+            ShowBubble(Core.Line("noKey"), null, new[] { (L10n.T("Открыть настройки"), true, (Action)(async () => { HideBubble(); await OpenPage(new SettingsPage()); })) }, ms: 12000);
+            Ui.Toast(L10n.F("Сначала добавь ключ {0} в настройках", title));
             return;
         }
         if (Core.Agent.IsBusy)
         {
-            Ui.Toast("Вера ещё отвечает на прошлое сообщение");
+            Ui.Toast(L10n.T("Вера ещё отвечает на прошлое сообщение"));
             return;
         }
         var images = _attachments.Count > 0 && textOverride is null ? _attachments.ToList() : null;
@@ -859,10 +859,10 @@ public sealed class ChatPage : ContentPage
     private void UpdateSendIcon()
     {
         string src, hint;
-        if (_busy || (_speech.IsActive && !HasDraft)) (src, hint) = ("ic_stop_dark.png", "Остановить");
-        else if (HasDraft) (src, hint) = ("ic_send_dark.png", "Отправить");
-        else if (_voice.State is RecorderState.Listening or RecorderState.Recording) (src, hint) = ("ic_mic_on_dark.png", "Перестать слушать");
-        else (src, hint) = ("ic_mic_dark.png", "Сказать голосом");
+        if (_busy || (_speech.IsActive && !HasDraft)) (src, hint) = ("ic_stop_dark.png", L10n.T("Остановить"));
+        else if (HasDraft) (src, hint) = ("ic_send_dark.png", L10n.T("Отправить"));
+        else if (_voice.State is RecorderState.Listening or RecorderState.Recording) (src, hint) = ("ic_mic_on_dark.png", L10n.T("Перестать слушать"));
+        else (src, hint) = ("ic_mic_dark.png", L10n.T("Сказать голосом"));
         if (_sendBtn.Source is FileImageSource f && f.File == src) return;
         _sendBtn.Source = src;
         SemanticProperties.SetDescription(_sendBtn, hint);
@@ -875,7 +875,7 @@ public sealed class ChatPage : ContentPage
     {
         Touch();
         const string gallery = "Фото из галереи", camera = "Снять камерой", doc = "Файл или документ";
-        var choice = await DisplayActionSheetAsync("Приложить", "Отмена", null, gallery, camera, doc);
+        var choice = await Ui.ActionSheetAsync(this, "Приложить", null, gallery, camera, doc);
         switch (choice)
         {
             case gallery: await PickImageAsync(false); break;
@@ -892,7 +892,7 @@ public sealed class ChatPage : ContentPage
             FileResult? file;
             if (camera)
             {
-                if (!MediaPicker.Default.IsCaptureSupported) { Ui.Toast("Камера недоступна"); return; }
+                if (!MediaPicker.Default.IsCaptureSupported) { Ui.Toast(L10n.T("Камера недоступна")); return; }
                 file = await MediaPicker.Default.CapturePhotoAsync();
             }
             else
@@ -910,17 +910,17 @@ public sealed class ChatPage : ContentPage
             _attachPreview = jpeg;
             _attachImage.Source = ImageSource.FromStream(() => new MemoryStream(jpeg));
             _attachBox.IsVisible = true;
-            if (string.IsNullOrWhiteSpace(_input.Text)) _input.Placeholder = "Что спросить про фото?";
+            if (string.IsNullOrWhiteSpace(_input.Text)) _input.Placeholder = L10n.T("Что спросить про фото?");
             UpdateSendIcon();
             _vera.SetEmotion("surprised", 2500);
         }
         catch (PermissionException)
         {
-            Ui.Toast("Нет разрешения на камеру или фото");
+            Ui.Toast(L10n.T("Нет разрешения на камеру или фото"));
         }
         catch (Exception e)
         {
-            Ui.Toast("Не получилось добавить фото: " + e.Message, true);
+            Ui.Toast(L10n.T("Не получилось добавить фото: ") + e.Message, true);
         }
     }
 
@@ -931,7 +931,7 @@ public sealed class ChatPage : ContentPage
         Touch();
         try
         {
-            var files = await FilePicker.Default.PickMultipleAsync(new PickOptions { PickerTitle = "Что показать Вере?" });
+            var files = await FilePicker.Default.PickMultipleAsync(new PickOptions { PickerTitle = L10n.T("Что показать Вере?") });
             if (files is null) return;
             foreach (var f in files)
             {
@@ -939,7 +939,7 @@ public sealed class ChatPage : ContentPage
                 var name = f.FileName;
                 if (!DocumentReader.IsSupported(name))
                 {
-                    Ui.Toast($"«{name}»: такой формат пока не читаю. Подойдут PDF, DOCX, TXT/MD/CSV и код.", true);
+                    Ui.Toast(L10n.F("«{0}»: такой формат пока не читаю. Подойдут PDF, DOCX, TXT/MD/CSV и код.", name), true);
                     continue;
                 }
                 await using var stream = await f.OpenReadAsync();
@@ -947,7 +947,7 @@ public sealed class ChatPage : ContentPage
                 await stream.CopyToAsync(ms);
                 var bytes = ms.ToArray();
                 var doc = await Task.Run(() => DocumentReader.Read(bytes, name));
-                if (string.IsNullOrWhiteSpace(doc.Text)) { Ui.Toast($"В «{name}» не нашлось текста", true); continue; }
+                if (string.IsNullOrWhiteSpace(doc.Text)) { Ui.Toast(L10n.F("В «{0}» не нашлось текста", name), true); continue; }
                 _docs.Add(doc);
             }
             UpdateDocs();
@@ -955,19 +955,19 @@ public sealed class ChatPage : ContentPage
         }
         catch (PermissionException)
         {
-            Ui.Toast("Нет разрешения на файлы");
+            Ui.Toast(L10n.T("Нет разрешения на файлы"));
         }
         catch (Exception e)
         {
-            Ui.Toast("Не получилось прочитать файл: " + e.Message, true);
+            Ui.Toast(L10n.T("Не получилось прочитать файл: ") + e.Message, true);
         }
     }
 
     private void UpdateDocs()
     {
         _docBox.IsVisible = _docs.Count > 0;
-        _docLabel.Text = string.Join("\n", _docs.Select(d => "📄 " + d.Name + (d.Pages > 0 ? $" · {d.Pages} стр." : "")));
-        if (_docs.Count > 0 && string.IsNullOrWhiteSpace(_input.Text)) _input.Placeholder = "Что сделать с документом?";
+        _docLabel.Text = string.Join("\n", _docs.Select(d => "📄 " + d.Name + (d.Pages > 0 ? L10n.F(" · {0} стр.", d.Pages) : "")));
+        if (_docs.Count > 0 && string.IsNullOrWhiteSpace(_input.Text)) _input.Placeholder = L10n.T("Что сделать с документом?");
         UpdateSendIcon();
     }
 
@@ -977,7 +977,7 @@ public sealed class ChatPage : ContentPage
         _attachPreview = null;
         _attachBox.IsVisible = false;
         _attachImage.Source = null;
-        _input.Placeholder = "Напиши Вере…";
+        _input.Placeholder = L10n.T("Напиши Вере…");
         UpdateSendIcon();
     }
 
@@ -1106,7 +1106,7 @@ public sealed class ChatPage : ContentPage
                     if (tf.Aborted)
                     {
                         _speech.Stop();
-                        t.View.SetVera(text.Length > 0 ? text + " …" : "*(остановлено)*", t.Tools, false);
+                        t.View.SetVera(text.Length > 0 ? text + " …" : L10n.T("*(остановлено)*"), t.Tools, false);
                     }
                     else
                     {
@@ -1118,7 +1118,7 @@ public sealed class ChatPage : ContentPage
                 {
                     _vera.SetEmotion("sad", 8000);
                     Sfx.Error();
-                    ShowBubble(tf.Message, "ой…", ms: 10000);
+                    ShowBubble(tf.Message, L10n.T("ой…"), ms: 10000);
                 }
                 UpdateSendIcon();
                 UpdateStatus();
@@ -1181,7 +1181,7 @@ public sealed class ChatPage : ContentPage
             case RecorderState.Listening:
                 _speech.Stop();
                 _vera.Mode = PetMode.Listening;
-                ShowBubble(Core.Line("listening"), "🎙️ слушаю", sticky: true, kind: "voice");
+                ShowBubble(Core.Line("listening"), L10n.T("🎙️ слушаю"), sticky: true, kind: "voice");
                 SetBars(true);
                 break;
             case RecorderState.Recording:
@@ -1191,7 +1191,7 @@ public sealed class ChatPage : ContentPage
             case RecorderState.Processing:
                 _vera.Mode = PetMode.Processing;
                 SetBars(false);
-                ShowBubble("распознаю…", "🎙️", sticky: true, kind: "voice");
+                ShowBubble(L10n.T("распознаю…"), "🎙️", sticky: true, kind: "voice");
                 break;
             default:
                 SetBars(false);
@@ -1255,7 +1255,7 @@ public sealed class ChatPage : ContentPage
         _vera.SetEmotion(missed ? "surprised" : "happy", 15000);
         Fx("!", Ui.Warn, 46, -2);
         _vera.Hop();
-        ShowReminderBubble(r, missed ? "⏰ пропущенное" : "⏰ напоминание", phrase);
+        ShowReminderBubble(r, missed ? L10n.T("⏰ пропущенное") : L10n.T("⏰ напоминание"), phrase);
         if (s.Reminders.Speak && s.Tts.Engine != "off")
         {
             _speech.Stop();
@@ -1268,26 +1268,26 @@ public sealed class ChatPage : ContentPage
     {
         ShowBubble(text, head, new[]
         {
-            ("Готово ✓", true, (Action)(() =>
+            (L10n.T("Готово ✓"), true, (Action)(() =>
             {
                 Core.Reminders.Complete(r.Id);
                 ReminderNotifier.Cancel(r.Id);
                 _vera.SetEmotion("smug", 6000);
                 HideBubble();
             })),
-            ("+10 мин", false, (Action)(() =>
+            (L10n.T("+10 мин"), false, (Action)(() =>
             {
                 Core.Reminders.Snooze(r.Id, 10);
                 ReminderNotifier.Cancel(r.Id);
                 HideBubble();
-                Ui.Toast("Напомню через 10 минут");
+                Ui.Toast(L10n.T("Напомню через 10 минут"));
             })),
-            ("+1 час", false, (Action)(() =>
+            (L10n.T("+1 час"), false, (Action)(() =>
             {
                 Core.Reminders.Snooze(r.Id, 60);
                 ReminderNotifier.Cancel(r.Id);
                 HideBubble();
-                Ui.Toast("Напомню через час");
+                Ui.Toast(L10n.T("Напомню через час"));
             })),
         }, sticky: true, kind: "reminder");
         var gen = _bubbleGen;
@@ -1303,7 +1303,7 @@ public sealed class ChatPage : ContentPage
             ReminderNotifier.Cancel(id);
             _vera.SetEmotion("happy", 8000);
             _vera.Hop();
-            ShowReminderBubble(r, "⏰ напоминание", r.Text);
+            ShowReminderBubble(r, L10n.T("⏰ напоминание"), r.Text);
         });
     }
 

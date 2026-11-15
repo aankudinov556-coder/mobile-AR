@@ -286,6 +286,7 @@ public sealed class SettingsService
         if (_file.Data.Language is not ("ru" or "en"))
         {
             _file.Data.Language = existed ? "ru" : L10n.SystemDefault();
+            if (!existed && _file.Data.Language == "en") _file.Data.Stt.Language = "en";
             if (existed) _file.Save();
         }
         // новые провайдеры по умолчанию, если в старом файле их нет

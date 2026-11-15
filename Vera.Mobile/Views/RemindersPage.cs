@@ -23,7 +23,7 @@ public sealed class RemindersPage : ContentPage
 
     public RemindersPage()
     {
-        Ui.StylePage(this, "Напоминания");
+        Ui.StylePage(this, L10n.T("Напоминания"));
         NavigationPage.SetHasNavigationBar(this, false);
 
         // Вера внизу: чиби сердится, если что-то пропущено, иначе машет; рядом — белый комикс-пузырь
@@ -49,7 +49,7 @@ public sealed class RemindersPage : ContentPage
         veraRow.Add(_veraArt, 0);
         veraRow.Add(bubble, 1);
 
-        var add = Ui.Primary("Новое напоминание", async (_, _) => await EditAsync(null));
+        var add = Ui.Primary(L10n.T("Новое напоминание"), async (_, _) => await EditAsync(null));
         add.CornerRadius = 16;
         add.MinimumHeightRequest = 52;
         add.Shadow = Ui.HardShadow(4);
@@ -60,7 +60,7 @@ public sealed class RemindersPage : ContentPage
             RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) },
             BackgroundColor = Ui.Bg,
         };
-        root.Add(Ui.PageHeader(this, "Напоминания"), 0, 0);
+        root.Add(Ui.PageHeader(this, L10n.T("Напоминания")), 0, 0);
         root.Add(new ScrollView { Content = _list }, 0, 1);
         root.Add(new VerticalStackLayout { Spacing = 12, Padding = new Thickness(16, 4, 16, 16), Children = { veraRow, add } }, 0, 2);
         Content = root;
@@ -109,13 +109,13 @@ public sealed class RemindersPage : ContentPage
         _warnings.Children.Clear();
         if (!ReminderNotifier.Enabled())
         {
-            _warnings.Children.Add(WarningCard("Уведомления выключены — когда приложение закрыто, Вера не сможет напомнить.",
-                "Разрешить", () => PermissionsUi.OpenNotificationSettings()));
+            _warnings.Children.Add(WarningCard(L10n.T("Уведомления выключены — когда приложение закрыто, Вера не сможет напомнить."),
+                L10n.T("Разрешить"), () => PermissionsUi.OpenNotificationSettings()));
         }
         if (!ReminderScheduler.CanScheduleExact())
         {
-            _warnings.Children.Add(WarningCard("Нет разрешения на точные будильники — напоминания могут приходить с опозданием.",
-                "Разрешить", () => PermissionsUi.OpenExactAlarmSettings()));
+            _warnings.Children.Add(WarningCard(L10n.T("Нет разрешения на точные будильники — напоминания могут приходить с опозданием."),
+                L10n.T("Разрешить"), () => PermissionsUi.OpenExactAlarmSettings()));
         }
         _warnings.IsVisible = _warnings.Children.Count > 0;
     }
@@ -148,9 +148,9 @@ public sealed class RemindersPage : ContentPage
     {
         var d = due.LocalDateTime.Date;
         var today = now.LocalDateTime.Date;
-        if (d < today) return "Просрочено";
-        if (d == today) return "Сегодня";
-        if (d == today.AddDays(1)) return "Завтра";
+        if (d < today) return L10n.T("Просрочено");
+        if (d == today) return L10n.T("Сегодня");
+        if (d == today.AddDays(1)) return L10n.T("Завтра");
         return d.ToString(d.Year == today.Year ? "dddd, d MMMM" : "d MMMM yyyy", Ru);
     }
 
@@ -168,17 +168,17 @@ public sealed class RemindersPage : ContentPage
         {
             ring = Core.Settings.Current.Sync.RingOn switch
             {
-                "active" => "звенит там, где ты",
-                "pc" => "звенит на ПК",
-                "phone" => "звенит на телефоне",
-                _ => "звенит на обоих",
+                "active" => L10n.T("звенит там, где ты"),
+                "pc" => L10n.T("звенит на ПК"),
+                "phone" => L10n.T("звенит на телефоне"),
+                _ => L10n.T("звенит на обоих"),
             };
         }
 
         _list.Children.Clear();
         if (_warnings.IsVisible) _list.Children.Add(_warnings);
         if (active.Count == 0)
-            _list.Children.Add(new Label { Text = "Активных напоминаний нет.", FontSize = 14, TextColor = Ui.Muted, Margin = new Thickness(0, 8, 0, 0) });
+            _list.Children.Add(new Label { Text = L10n.T("Активных напоминаний нет."), FontSize = 14, TextColor = Ui.Muted, Margin = new Thickness(0, 8, 0, 0) });
 
         string? group = null;
         foreach (var r in active)
@@ -198,7 +198,7 @@ public sealed class RemindersPage : ContentPage
         {
             var toggle = new Label
             {
-                Text = (_showDone ? "▾ " : "▸ ") + $"Сработавшие ({done.Count})".ToUpperInvariant(),
+                Text = (_showDone ? "▾ " : "▸ ") + L10n.F("Сработавшие ({0})", done.Count).ToUpperInvariant(),
                 FontSize = 12,
                 FontFamily = Ui.FontBold,
                 CharacterSpacing = 1,
@@ -220,18 +220,18 @@ public sealed class RemindersPage : ContentPage
         {
             pose = "angry";
             var yesterday = missed.Due.LocalDateTime.Date == now.LocalDateTime.Date.AddDays(-1);
-            say = (yesterday ? "Вчера ты проспал" : "Ты проспал") + $" «{Short(missed.Text, 40)}». " +
-                  (peers.Count > 0 ? "Ещё раз — и я начну звенеть на всех устройствах сразу!" : "Ещё раз — и я начну звенеть громче!");
+            say = (yesterday ? L10n.T("Вчера ты проспал") : L10n.T("Ты проспал")) + $" «{Short(missed.Text, 40)}». " +
+                  (peers.Count > 0 ? L10n.T("Ещё раз — и я начну звенеть на всех устройствах сразу!") : L10n.T("Ещё раз — и я начну звенеть громче!"));
         }
         else if (next is not null)
         {
             pose = "wave";
-            say = $"Следующее — «{Short(next.Text, 40)}» {RuText.Relative(next.Due)}. Я прослежу~";
+            say = L10n.F("Следующее — «{0}» {1}. Я прослежу~", Short(next.Text, 40), RuText.Relative(next.Due));
         }
         else
         {
             pose = "wave";
-            say = "Пока пусто. Скажи мне в чате «напомни через 10 минут…» — поставлю сама.";
+            say = L10n.T("Пока пусто. Скажи мне в чате «напомни через 10 минут…» — поставлю сама.");
         }
         _veraSays.Text = say;
         if (pose != _veraPose)
@@ -247,8 +247,8 @@ public sealed class RemindersPage : ContentPage
         var local = r.Due.LocalDateTime;
         var overdue = !r.Done && r.Due < now.AddMinutes(-1);
         string sub;
-        if (r.Done) sub = "сработало";
-        else if (overdue) sub = "просрочено";
+        if (r.Done) sub = L10n.T("сработало");
+        else if (overdue) sub = L10n.T("просрочено");
         else if (r.Repeat != "none" && !next) sub = r.RepeatText;
         else if (next || local.Date == now.LocalDateTime.Date) sub = RuText.Relative(r.Due);
         else sub = local.ToString("ddd", Ru);
@@ -284,13 +284,13 @@ public sealed class RemindersPage : ContentPage
         // подпись справа: повтор (если не показан слева), кто поставил, где создано, где звенит
         var parts = new List<string>();
         if (r.Repeat != "none" && (next || r.Done || overdue)) parts.Add(r.RepeatText);
-        if (r.Source == "ai") parts.Add("поставила Вера");
-        else if (r.Source == "snooze") parts.Add("отложено");
+        if (r.Source == "ai") parts.Add(L10n.T("поставила Вера"));
+        else if (r.Source == "snooze") parts.Add(L10n.T("отложено"));
         if (!string.IsNullOrEmpty(r.Dev) && r.Dev != me)
-            parts.Add(peers.FirstOrDefault(p => p.Id == r.Dev)?.Platform == "mobile" ? "с другого телефона" : "создано на ПК");
+            parts.Add(peers.FirstOrDefault(p => p.Id == r.Dev)?.Platform == "mobile" ? L10n.T("с другого телефона") : L10n.T("создано на ПК"));
         if (next && ring is not null) parts.Add(ring);
         if (r.Done && r.FiredAt is { } f) parts.Add(RuText.WhenShort(f));
-        if (parts.Count == 0) parts.Add(r.Repeat == "none" ? "однократно" : "повторяется");
+        if (parts.Count == 0) parts.Add(L10n.T(r.Repeat == "none" ? "однократно" : "повторяется"));
 
         var right = new VerticalStackLayout
         {
@@ -354,7 +354,7 @@ public sealed class RemindersPage : ContentPage
             if (r.Repeat == "none") opts.AddRange(new[] { done, later10, later60 });
         }
         opts.Add(edit);
-        var choice = await DisplayActionSheetAsync(Short(r.Text, 60), "Отмена", delete, opts.ToArray());
+        var choice = await Ui.ActionSheetAsync(this, Short(r.Text, 60), delete, opts.ToArray());
         try
         {
             switch (choice)
@@ -362,7 +362,7 @@ public sealed class RemindersPage : ContentPage
                 case done:
                     Core.Reminders.Complete(r.Id);
                     ReminderNotifier.Cancel(r.Id);
-                    Ui.Toast("Отмечено как выполненное");
+                    Ui.Toast(L10n.T("Отмечено как выполненное"));
                     break;
                 case later10:
                 case later60:
@@ -372,19 +372,19 @@ public sealed class RemindersPage : ContentPage
                     var due = from.AddMinutes(choice == later10 ? 10 : 60);
                     Core.Reminders.Update(r.Id, due: due);
                     ReminderNotifier.Cancel(r.Id);
-                    Ui.Toast("Перенесено на " + RuText.WhenShort(due));
+                    Ui.Toast(L10n.T("Перенесено на ") + RuText.WhenShort(due));
                     break;
                 }
                 case again:
                     Core.Reminders.Snooze(r.Id, 10);
                     ReminderNotifier.Cancel(r.Id);
-                    Ui.Toast("Напомню через 10 минут");
+                    Ui.Toast(L10n.T("Напомню через 10 минут"));
                     break;
                 case edit:
                     await EditAsync(r);
                     break;
                 case delete:
-                    if (!await DisplayAlertAsync("Удалить напоминание?", r.Text, "Удалить", "Отмена")) return;
+                    if (!await DisplayAlertAsync(L10n.T("Удалить напоминание?"), r.Text, L10n.T("Удалить"), L10n.T("Отмена"))) return;
                     Core.Reminders.Remove(r.Id);
                     ReminderNotifier.Cancel(r.Id);
                     break;
@@ -413,17 +413,17 @@ public sealed class ReminderEditPage : ContentPage
     public ReminderEditPage(Reminder? r)
     {
         _orig = r;
-        var title = r is null ? "Новое напоминание" : "Изменить";
+        var title = r is null ? L10n.T("Новое напоминание") : L10n.T("Изменить");
         Ui.StylePage(this, title);
         NavigationPage.SetHasNavigationBar(this, false);
 
-        _text = Ui.Entry("О чём напомнить?");
+        _text = Ui.Entry(L10n.T("О чём напомнить?"));
         _text.MaxLength = 300;
         _text.ReturnType = ReturnType.Done;
         _text.Completed += async (_, _) => await SaveAsync();
         _date = new DatePicker { TextColor = Ui.Text, FontSize = 15, MinimumDate = DateTime.Today, Format = "d MMM yyyy", BackgroundColor = Colors.Transparent };
         _time = new TimePicker { TextColor = Ui.Text, FontSize = 15, Format = "HH:mm", BackgroundColor = Colors.Transparent };
-        _repeat = Ui.Picker(RepeatItems.Select(x => x.Label), "Повтор");
+        _repeat = Ui.Picker(RepeatItems.Select(x => x.Label), L10n.T("Повтор"));
         _repeat.SelectedIndex = 0;
         if (r is null) ResetWhen();
         else
@@ -437,11 +437,11 @@ public sealed class ReminderEditPage : ContentPage
         var quick = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap };
         foreach (var (label, act) in new (string, Func<DateTime>)[]
                  {
-                     ("+5 мин", () => DateTime.Now.AddMinutes(5)),
-                     ("+15 мин", () => DateTime.Now.AddMinutes(15)),
-                     ("+30 мин", () => DateTime.Now.AddMinutes(30)),
-                     ("+1 ч", () => DateTime.Now.AddHours(1)),
-                     ("завтра 9:00", () => DateTime.Today.AddDays(1).AddHours(9)),
+                     (L10n.T("+5 мин"), () => DateTime.Now.AddMinutes(5)),
+                     (L10n.T("+15 мин"), () => DateTime.Now.AddMinutes(15)),
+                     (L10n.T("+30 мин"), () => DateTime.Now.AddMinutes(30)),
+                     (L10n.T("+1 ч"), () => DateTime.Now.AddHours(1)),
+                     (L10n.T("завтра 9:00"), () => DateTime.Today.AddDays(1).AddHours(9)),
                  })
         {
             var b = Ui.Chip(label, (_, _) => SetWhen(act()));
@@ -458,14 +458,14 @@ public sealed class ReminderEditPage : ContentPage
         whenRow.Add(Ui.Box(_time), 1);
 
         var fields = new List<IView>();
-        if (r is null) fields.Add(Ui.MutedLabel("Или просто скажи Вере: «напомни завтра в 9 позвонить маме» — она поставит сама."));
-        fields.Add(Ui.Field("О чём напомнить", Ui.Box(_text)));
-        fields.Add(Ui.Field("Когда", whenRow));
+        if (r is null) fields.Add(Ui.MutedLabel(L10n.T("Или просто скажи Вере: «напомни завтра в 9 позвонить маме» — она поставит сама.")));
+        fields.Add(Ui.Field(L10n.T("О чём напомнить"), Ui.Box(_text)));
+        fields.Add(Ui.Field(L10n.T("Когда"), whenRow));
         fields.Add(quick);
-        fields.Add(Ui.Field("Повтор", Ui.Box(_repeat)));
+        fields.Add(Ui.Field(L10n.T("Повтор"), Ui.Box(_repeat)));
         var card = Ui.Card(fields.ToArray());
 
-        var save = Ui.Primary(r is null ? "Добавить" : "Сохранить", async (_, _) => await SaveAsync());
+        var save = Ui.Primary(r is null ? L10n.T("Добавить") : L10n.T("Сохранить"), async (_, _) => await SaveAsync());
         save.CornerRadius = 16;
         save.MinimumHeightRequest = 52;
         save.Shadow = Ui.HardShadow(4);
@@ -535,7 +535,7 @@ public sealed class ReminderEditPage : ContentPage
     {
         if (_saving) return;
         var text = (_text.Text ?? "").Trim();
-        if (text.Length == 0) { Ui.Toast("Напиши, о чём напомнить"); _text.Focus(); return; }
+        if (text.Length == 0) { Ui.Toast(L10n.T("Напиши, о чём напомнить")); _text.Focus(); return; }
         var when = new DateTimeOffset(SelectedWhen());
         var repeat = RepeatItems[Math.Max(0, _repeat.SelectedIndex)].Id;
         try
@@ -543,16 +543,16 @@ public sealed class ReminderEditPage : ContentPage
             if (_orig is null)
             {
                 var r = Core.Reminders.Add(text, when, repeat, "user");
-                Ui.Toast($"Готово: {r.DueText}");
+                Ui.Toast(L10n.F("Готово: {0}", r.DueText));
             }
             else
             {
                 if (repeat != "none") when = NextFuture(when, repeat);
-                else if (when <= DateTimeOffset.Now) { Ui.Toast("Это время уже прошло", true); return; }
+                else if (when <= DateTimeOffset.Now) { Ui.Toast(L10n.T("Это время уже прошло"), true); return; }
                 var r = Core.Reminders.Update(_orig.Id, text, when, repeat);
-                if (r is null) { Ui.Toast("Напоминание не найдено — возможно, его удалили", true); return; }
+                if (r is null) { Ui.Toast(L10n.T("Напоминание не найдено — возможно, его удалили"), true); return; }
                 ReminderNotifier.Cancel(_orig.Id);
-                Ui.Toast($"Сохранено: {r.DueText}");
+                Ui.Toast(L10n.F("Сохранено: {0}", r.DueText));
             }
         }
         catch (Exception e)

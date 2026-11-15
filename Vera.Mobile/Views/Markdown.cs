@@ -1,3 +1,4 @@
+using Vera.Core;
 using Vera.Core.Markdown;
 
 namespace Vera.Mobile.Views;
@@ -103,7 +104,7 @@ public static class Markdown
                     tap.Tapped += async (_, _) =>
                     {
                         try { await Launcher.Default.OpenAsync(new Uri(url)); }
-                        catch { Ui.Toast("Не получилось открыть ссылку"); }
+                        catch { Ui.Toast(L10n.T("Не получилось открыть ссылку")); }
                     };
                     span.GestureRecognizers.Add(tap);
                     break;
@@ -118,7 +119,7 @@ public static class Markdown
     {
         var copy = new Label
         {
-            Text = "Копировать",
+            Text = L10n.T("Копировать"),
             FontSize = 12,
             TextColor = Color.FromArgb("#5f5949"),
             HorizontalOptions = LayoutOptions.End,
@@ -130,9 +131,9 @@ public static class Markdown
             try
             {
                 await Clipboard.Default.SetTextAsync(code);
-                copy.Text = "Скопировано";
+                copy.Text = L10n.T("Скопировано");
                 await Task.Delay(1500);
-                copy.Text = "Копировать";
+                copy.Text = L10n.T("Копировать");
             }
             catch { }
         };
@@ -141,7 +142,7 @@ public static class Markdown
         {
             ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
         };
-        header.Add(new Label { Text = string.IsNullOrEmpty(language) ? "код" : language, FontSize = 12, TextColor = Ui.Faint, VerticalOptions = LayoutOptions.Center }, 0);
+        header.Add(new Label { Text = string.IsNullOrEmpty(language) ? L10n.T("код") : language, FontSize = 12, TextColor = Ui.Faint, VerticalOptions = LayoutOptions.Center }, 0);
         header.Add(copy, 1);
         var body = new ScrollView
         {

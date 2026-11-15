@@ -33,14 +33,14 @@ public sealed class SettingsPage : ContentPage
 
     public SettingsPage()
     {
-        Ui.StylePage(this, "Настройки");
+        Ui.StylePage(this, L10n.T("Настройки"));
 
         // ------------------------------------------------ приветствие
         _welcome = Ui.Card(
-            Ui.H3("Добро пожаловать!"),
-            Ui.Label("Чтобы Вера заработала, вставь хотя бы один API-ключ ниже — например, OpenRouter (один ключ даёт доступ к сотням моделей). " +
-                     "Для голоса и распознавания речи нужен ключ OpenAI (или Groq для распознавания + системный голос Android бесплатно, " +
-                     "или распознавание средствами телефона).", 14, Ui.Text));
+            Ui.H3(L10n.T("Добро пожаловать!")),
+            Ui.Label(L10n.T("Чтобы Вера заработала, вставь хотя бы один API-ключ ниже — например, OpenRouter (один ключ даёт доступ к сотням моделей). ") +
+                     L10n.T("Для голоса и распознавания речи нужен ключ OpenAI (или Groq для распознавания + системный голос Android бесплатно, ") +
+                     L10n.T("или распознавание средствами телефона)."), 14, Ui.Text));
         _welcome.Stroke = Ui.Accent.WithAlpha(0.5f);
 
         // ------------------------------------------------ модель
@@ -71,46 +71,48 @@ public sealed class SettingsPage : ContentPage
             seg.Add(b, i % 2, i / 2);
             i++;
         }
-        _model = Ui.Entry("название модели");
+        _model = Ui.Entry(L10n.T("название модели"));
         _model.ClearButtonVisibility = ClearButtonVisibility.Never;
         _model.Completed += (_, _) => SaveModel();
         _model.Unfocused += (_, _) => SaveModel();
         var modelRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
         modelRow.Add(Ui.Box(_model), 0);
-        modelRow.Add(Ui.Ghost("Список…", async (_, _) => await PickModelAsync()), 1);
+        modelRow.Add(Ui.Ghost(L10n.T("Список…"), async (_, _) => await PickModelAsync()), 1);
         _modelHint = Ui.Label("", 12, Ui.Faint);
 
         var modelCard = Ui.Card(
-            Ui.H3("🧠 Модель"),
-            Ui.Field("Провайдер", seg),
-            Ui.Field("Модель", new VerticalStackLayout { Spacing = 4, Children = { modelRow, _modelHint } }),
-            Ui.Field("Глубина размышлений", Choice(
+            Ui.H3(L10n.T("🧠 Модель")),
+            Ui.Field(L10n.T("Провайдер"), seg),
+            Ui.Field(L10n.T("Модель"), new VerticalStackLayout { Spacing = 4, Children = { modelRow, _modelHint } }),
+            Ui.Field(L10n.T("Глубина размышлений"), Choice(
                 new[] { "low", "medium", "high" },
-                new[] { "Быстро (рекомендую для болтовни)", "Сбалансированно", "Глубоко (медленнее, дороже)" },
+                new[] { L10n.T("Быстро (рекомендую для болтовни)"), L10n.T("Сбалансированно"), L10n.T("Глубоко (медленнее, дороже)") },
                 s => s.Effort, (s, v) => s.Effort = v)),
-            Ui.Toggle("Поиск в интернете", S.WebSearch, v => Set(s => s.WebSearch = v),
-                "Anthropic — web search, OpenRouter — плагин web; платно у провайдера"),
-            SliderRow("Сообщений истории в контексте", 6, 200, 2, s => s.HistoryLimit, (s, v) => s.HistoryLimit = (int)v, v => ((int)v).ToString()));
+            Ui.Toggle(L10n.T("Поиск в интернете"), S.WebSearch, v => Set(s => s.WebSearch = v),
+                L10n.T("Anthropic — web search, OpenRouter — плагин web; платно у провайдера")),
+            SliderRow(L10n.T("Сообщений истории в контексте"), 6, 200, 2, s => s.HistoryLimit, (s, v) => s.HistoryLimit = (int)v, v => ((int)v).ToString()));
 
         // ------------------------------------------------ ключи
         var keysCard = Ui.Card(
-            Ui.H3("🔑 API-ключи"),
-            Ui.MutedLabel("Ключи хранятся только на этом телефоне в зашифрованном виде (Android Keystore)."),
+            Ui.H3(L10n.T("🔑 API-ключи")),
+            Ui.MutedLabel(L10n.T("Ключи хранятся только на этом телефоне в зашифрованном виде (Android Keystore).")),
             _keys);
 
         // ------------------------------------------------ характер
         var personaIds = Personas.All.Keys.ToArray();
         var personaCard = Ui.Card(
-            Ui.H3("💁 Характер"),
-            Ui.Field("Как Вере тебя называть", Ui.Box(TextSetting("семпай", s => s.UserName, (s, v) => s.UserName = v, 40))),
-            Ui.Field("Город (для погоды и сводки)", Ui.Box(TextSetting("Москва", s => s.City, (s, v) => s.City = v.Trim(), 60))),
-            Ui.Field("Характер", Choice(personaIds, personaIds.Select(p => Personas.All[p].Label).ToArray(), s => s.Persona, (s, v) => s.Persona = v)),
-            Ui.Field("Дополнительные указания (системный промпт)", Ui.Box(EditorSetting(
-                "Например: я студент-медик, объясняй просто и с примерами", s => s.CustomPrompt, (s, v) => s.CustomPrompt = v), 90)));
+            Ui.H3(L10n.T("💁 Характер")),
+            Ui.Field("Язык / Language", Choice(new[] { "ru", "en" }, new[] { "RU · Русский", "EN · English" },
+                s => s.Language == "en" ? "en" : "ru", (s, v) => s.Language = v, () => _ = AskRestartAsync())),
+            Ui.Field(L10n.T("Как Вере тебя называть"), Ui.Box(TextSetting(L10n.T("семпай"), s => s.UserName, (s, v) => s.UserName = v, 40))),
+            Ui.Field(L10n.T("Город (для погоды и сводки)"), Ui.Box(TextSetting(L10n.T("Москва"), s => s.City, (s, v) => s.City = v.Trim(), 60))),
+            Ui.Field(L10n.T("Характер"), Choice(personaIds, personaIds.Select(p => Personas.All[p].Label).ToArray(), s => s.Persona, (s, v) => s.Persona = v)),
+            Ui.Field(L10n.T("Дополнительные указания (системный промпт)"), Ui.Box(EditorSetting(
+                L10n.T("Например: я студент-медик, объясняй просто и с примерами"), s => s.CustomPrompt, (s, v) => s.CustomPrompt = v), 90)));
 
         // ------------------------------------------------ голос
         _ttsInstructions = EditorSetting("", s => s.Tts.OpenaiInstructions, (s, v) => s.Tts.OpenaiInstructions = v, 70);
-        var fromPersona = Ui.Ghost("по характеру", (_, _) =>
+        var fromPersona = Ui.Ghost(L10n.T("по характеру"), (_, _) =>
         {
             var hint = Personas.Get(S.Persona).TtsHint;
             _ttsInstructions.Text = hint;
@@ -122,16 +124,16 @@ public sealed class SettingsPage : ContentPage
             Spacing = 10,
             Children =
             {
-                Ui.Field("Голос", Choice(
+                Ui.Field(L10n.T("Голос"), Choice(
                     new[] { "shimmer", "nova", "coral", "sage", "ballad", "alloy", "verse", "fable", "ash", "echo", "onyx" }, null,
                     s => s.Tts.OpenaiVoice, (s, v) => s.Tts.OpenaiVoice = v)),
-                Ui.Field("Модель", Choice(new[] { "gpt-4o-mini-tts", "tts-1", "tts-1-hd" }, null, s => s.Tts.OpenaiModel, (s, v) => s.Tts.OpenaiModel = v)),
-                Ui.Field("Интонация (инструкция для голоса)", Ui.Box(_ttsInstructions, 70)),
+                Ui.Field(L10n.T("Модель"), Choice(new[] { "gpt-4o-mini-tts", "tts-1", "tts-1-hd" }, null, s => s.Tts.OpenaiModel, (s, v) => s.Tts.OpenaiModel = v)),
+                Ui.Field(L10n.T("Интонация (инструкция для голоса)"), Ui.Box(_ttsInstructions, 70)),
                 fromPersona,
             },
         };
 
-        _elevenVoice = Ui.Picker(Array.Empty<string>(), "Голос ElevenLabs");
+        _elevenVoice = Ui.Picker(Array.Empty<string>(), L10n.T("Голос ElevenLabs"));
         _elevenVoice.SelectedIndexChanged += (_, _) =>
         {
             if (_loading || _elevenVoice.SelectedIndex < 0 || _elevenVoice.SelectedIndex >= _elevenIds.Count) return;
@@ -140,45 +142,45 @@ public sealed class SettingsPage : ContentPage
         };
         var elevenRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
         elevenRow.Add(Ui.Box(_elevenVoice), 0);
-        elevenRow.Add(Ui.Ghost("Загрузить", async (_, _) => await LoadElevenVoicesAsync(true)), 1);
+        elevenRow.Add(Ui.Ghost(L10n.T("Загрузить"), async (_, _) => await LoadElevenVoicesAsync(true)), 1);
         _ttsEleven = new VerticalStackLayout
         {
             Spacing = 10,
             Children =
             {
-                Ui.Field("Голос ElevenLabs", elevenRow),
-                Ui.Field("Модель", Choice(
+                Ui.Field(L10n.T("Голос ElevenLabs"), elevenRow),
+                Ui.Field(L10n.T("Модель"), Choice(
                     new[] { "eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_turbo_v2_5" },
-                    new[] { "eleven_multilingual_v2 (качество)", "eleven_flash_v2_5 (быстро)", "eleven_turbo_v2_5" },
+                    new[] { L10n.T("eleven_multilingual_v2 (качество)"), L10n.T("eleven_flash_v2_5 (быстро)"), "eleven_turbo_v2_5" },
                     s => s.Tts.ElevenModel, (s, v) => s.Tts.ElevenModel = v)),
             },
         };
 
-        _systemVoice = Ui.Picker(Array.Empty<string>(), "Системный голос");
+        _systemVoice = Ui.Picker(Array.Empty<string>(), L10n.T("Системный голос"));
         _systemVoice.SelectedIndexChanged += (_, _) =>
         {
             if (_loading || _systemVoice.SelectedIndex < 0 || _systemVoice.SelectedIndex >= _systemIds.Count) return;
             var v = _systemIds[_systemVoice.SelectedIndex];
             Set(s => s.Tts.SystemVoice = v);
         };
-        var ttsSettingsBtn = Ui.Ghost("Настройки синтеза речи Android", (_, _) => PermissionsUi.OpenTtsSettings());
+        var ttsSettingsBtn = Ui.Ghost(L10n.T("Настройки синтеза речи Android"), (_, _) => PermissionsUi.OpenTtsSettings());
         ttsSettingsBtn.HorizontalOptions = LayoutOptions.Start;
         _ttsSystem = new VerticalStackLayout
         {
             Spacing = 10,
             Children =
             {
-                Ui.Field("Системный голос", Ui.Box(_systemVoice),
-                    "Русский голос можно скачать в настройках Android → Синтез речи (Google TTS → Установка голосовых данных)."),
+                Ui.Field(L10n.T("Системный голос"), Ui.Box(_systemVoice),
+                    L10n.T("Русский голос можно скачать в настройках Android → Синтез речи (Google TTS → Установка голосовых данных).")),
                 ttsSettingsBtn,
             },
         };
 
         var testText = Ui.Entry();
-        testText.Text = "Хе-хе, семпай~ Ну что, слышно меня? Только не влюбись!";
+        testText.Text = L10n.T("Хе-хе, семпай~ Ну что, слышно меня? Только не влюбись!");
         var testRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
         testRow.Add(Ui.Box(testText), 0);
-        testRow.Add(Ui.Primary("▶ Тест", (_, _) =>
+        testRow.Add(Ui.Primary(L10n.T("▶ Тест"), (_, _) =>
         {
             if (S.Tts.Engine == "off") { Ui.Toast("Голос выключен"); return; }
             App.Speech.Stop();
@@ -187,85 +189,85 @@ public sealed class SettingsPage : ContentPage
         }), 1);
 
         var voiceCard = Ui.Card(
-            Ui.H3("🔊 Голос Веры"),
-            Ui.Field("Движок синтеза речи", Choice(
+            Ui.H3(L10n.T("🔊 Голос Веры")),
+            Ui.Field(L10n.T("Движок синтеза речи"), Choice(
                 new[] { "openai", "elevenlabs", "system", "off" },
-                new[] { "OpenAI TTS (живой голос, нужен ключ OpenAI)", "ElevenLabs (нужен ключ ElevenLabs)", "Системный голос Android (бесплатно)", "Выключен" },
+                new[] { L10n.T("OpenAI TTS (живой голос, нужен ключ OpenAI)"), L10n.T("ElevenLabs (нужен ключ ElevenLabs)"), L10n.T("Системный голос Android (бесплатно)"), L10n.T("Выключен") },
                 s => s.Tts.Engine, (s, v) => s.Tts.Engine = v, UpdateVisibility)),
-            Ui.Field("Когда говорить вслух", Choice(
+            Ui.Field(L10n.T("Когда говорить вслух"), Choice(
                 new[] { "voice", "always", "never" },
-                new[] { "Только на голосовые запросы", "Всегда", "Никогда (кроме напоминаний)" },
+                new[] { L10n.T("Только на голосовые запросы"), L10n.T("Всегда"), L10n.T("Никогда (кроме напоминаний)") },
                 s => s.Tts.AutoSpeak, (s, v) => s.Tts.AutoSpeak = v)),
             _ttsOpenai, _ttsEleven, _ttsSystem,
-            SliderRow("Скорость", 0.6, 1.6, 0.05, s => s.Tts.Rate, (s, v) => s.Tts.Rate = v, v => v.ToString("0.00", CultureInfo.InvariantCulture) + "×"),
-            SliderRow("Громкость", 0, 1, 0.05, s => s.Tts.Volume, (s, v) => s.Tts.Volume = v, v => ((int)Math.Round(v * 100)) + "%"),
+            SliderRow(L10n.T("Скорость"), 0.6, 1.6, 0.05, s => s.Tts.Rate, (s, v) => s.Tts.Rate = v, v => v.ToString("0.00", CultureInfo.InvariantCulture) + "×"),
+            SliderRow(L10n.T("Громкость"), 0, 1, 0.05, s => s.Tts.Volume, (s, v) => s.Tts.Volume = v, v => ((int)Math.Round(v * 100)) + "%"),
             testRow);
 
         // ------------------------------------------------ распознавание
-        _sttOpenai = Ui.Field("Модель OpenAI", Choice(new[] { "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1" }, null,
+        _sttOpenai = Ui.Field(L10n.T("Модель OpenAI"), Choice(new[] { "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1" }, null,
             s => s.Stt.OpenaiModel, (s, v) => s.Stt.OpenaiModel = v));
-        _sttGroq = Ui.Field("Модель Groq", Choice(new[] { "whisper-large-v3-turbo", "whisper-large-v3" }, null,
+        _sttGroq = Ui.Field(L10n.T("Модель Groq"), Choice(new[] { "whisper-large-v3-turbo", "whisper-large-v3" }, null,
             s => s.Stt.GroqModel, (s, v) => s.Stt.GroqModel = v));
         _wakeSub = new VerticalStackLayout
         {
             Spacing = 10,
             Children =
             {
-                Ui.Field("Слова-активаторы (через запятую)", Ui.Box(TextSetting("вера, верочка", s => s.Voice.WakePhrases, (s, v) => s.Voice.WakePhrases = v, 200))),
-                Ui.Note("Пока приложение открыто, микрофон слушает постоянно, и каждая услышанная фраза отправляется на распознавание — это тратит баланс STT-сервиса. " +
-                        "С Groq это почти бесплатно, с распознаванием телефона — бесплатно (но Android может пикать при каждом перезапуске). Пока Вера говорит, она себя не слушает.", Ui.Warn),
+                Ui.Field(L10n.T("Слова-активаторы (через запятую)"), Ui.Box(TextSetting(L10n.T("вера, верочка"), s => s.Voice.WakePhrases, (s, v) => s.Voice.WakePhrases = v, 200))),
+                Ui.Note(L10n.T("Пока приложение открыто, микрофон слушает постоянно, и каждая услышанная фраза отправляется на распознавание — это тратит баланс STT-сервиса. ") +
+                        L10n.T("С Groq это почти бесплатно, с распознаванием телефона — бесплатно (но Android может пикать при каждом перезапуске). Пока Вера говорит, она себя не слушает."), Ui.Warn),
             },
         };
         var sttCard = Ui.Card(
-            Ui.H3("🎙️ Распознавание речи и активация"),
-            Ui.Field("Сервис", Choice(
+            Ui.H3(L10n.T("🎙️ Распознавание речи и активация")),
+            Ui.Field(L10n.T("Сервис"), Choice(
                 new[] { "openai", "groq", "device" },
-                new[] { "OpenAI (ключ OpenAI)", "Groq Whisper (быстро и дёшево)", "Телефон (распознавание Android, бесплатно)" },
+                new[] { L10n.T("OpenAI (ключ OpenAI)"), L10n.T("Groq Whisper (быстро и дёшево)"), L10n.T("Телефон (распознавание Android, бесплатно)") },
                 s => s.Stt.Provider, (s, v) => s.Stt.Provider = v, UpdateVisibility)),
-            Ui.Field("Язык", Choice(new[] { "ru", "en", "uk", "" }, new[] { "русский", "английский", "украинский", "авто" },
+            Ui.Field(L10n.T("Язык"), Choice(new[] { "ru", "en", "uk", "" }, new[] { L10n.T("русский"), L10n.T("английский"), L10n.T("украинский"), L10n.T("авто") },
                 s => s.Stt.Language, (s, v) => s.Stt.Language = v)),
             _sttOpenai, _sttGroq,
-            SliderRow("Чувствительность микрофона", 0, 1, 0.05, s => s.Voice.Sensitivity, (s, v) => s.Voice.Sensitivity = v, v => ((int)Math.Round(v * 100)) + "%"),
-            SliderRow("Пауза, после которой фраза считается законченной", 500, 2500, 100, s => s.Voice.SilenceMs, (s, v) => s.Voice.SilenceMs = (int)v, v => (int)v + " мс"),
-            Ui.Toggle("Звук начала/конца записи", S.Voice.Chime, v => Set(s => s.Voice.Chime = v)),
-            Ui.Toggle("Голосовая активация по слову «Вера»", S.Voice.WakeWord, v => _ = SetWakeAsync(v), "работает, пока приложение открыто"),
+            SliderRow(L10n.T("Чувствительность микрофона"), 0, 1, 0.05, s => s.Voice.Sensitivity, (s, v) => s.Voice.Sensitivity = v, v => ((int)Math.Round(v * 100)) + "%"),
+            SliderRow(L10n.T("Пауза, после которой фраза считается законченной"), 500, 2500, 100, s => s.Voice.SilenceMs, (s, v) => s.Voice.SilenceMs = (int)v, v => (int)v + L10n.T(" мс")),
+            Ui.Toggle(L10n.T("Звук начала/конца записи"), S.Voice.Chime, v => Set(s => s.Voice.Chime = v)),
+            Ui.Toggle(L10n.T("Голосовая активация по слову «Вера»"), S.Voice.WakeWord, v => _ = SetWakeAsync(v), L10n.T("работает, пока приложение открыто")),
             _wakeSub,
-            Ui.MutedLabel("Долгий тап по Вере или кнопка микрофона — сказать одну фразу."));
+            Ui.MutedLabel(L10n.T("Долгий тап по Вере или кнопка микрофона — сказать одну фразу.")));
 
         // ------------------------------------------------ напоминания
         var remCard = Ui.Card(
-            Ui.H3("⏰ Напоминания"),
-            Ui.Toggle("Уведомление Android", S.Reminders.Notification, v => Set(s => s.Reminders.Notification = v)),
-            Ui.Toggle("Звуковой сигнал", S.Reminders.Sound, v => Set(s => s.Reminders.Sound = v)),
-            Ui.Toggle("Вера проговаривает напоминание голосом", S.Reminders.Speak, v => Set(s => s.Reminders.Speak = v), "если приложение открыто"),
+            Ui.H3(L10n.T("⏰ Напоминания")),
+            Ui.Toggle(L10n.T("Уведомление Android"), S.Reminders.Notification, v => Set(s => s.Reminders.Notification = v)),
+            Ui.Toggle(L10n.T("Звуковой сигнал"), S.Reminders.Sound, v => Set(s => s.Reminders.Sound = v)),
+            Ui.Toggle(L10n.T("Вера проговаривает напоминание голосом"), S.Reminders.Speak, v => Set(s => s.Reminders.Speak = v), L10n.T("если приложение открыто")),
             _permRows);
 
         // ------------------------------------------------ возможности
         var capsCard = Ui.Card(
-            Ui.H3("📱 Что Вере можно делать"),
-            Ui.Toggle("Открывать сайты, приложения, звонилку, карты, фонарик и настройки", S.Capabilities.PcControl, v => Set(s => s.Capabilities.PcControl = v)),
-            Ui.Toggle("Читать и записывать буфер обмена", S.Capabilities.Clipboard, v => Set(s => s.Capabilities.Clipboard = v)),
-            Ui.MutedLabel("Напоминания, долгая память и погода доступны всегда. Звонить сама Вера не может — только откроет звонилку с номером."));
+            Ui.H3(L10n.T("📱 Что Вере можно делать")),
+            Ui.Toggle(L10n.T("Открывать сайты, приложения, звонилку, карты, фонарик и настройки"), S.Capabilities.PcControl, v => Set(s => s.Capabilities.PcControl = v)),
+            Ui.Toggle(L10n.T("Читать и записывать буфер обмена"), S.Capabilities.Clipboard, v => Set(s => s.Capabilities.Clipboard = v)),
+            Ui.MutedLabel(L10n.T("Напоминания, долгая память и погода доступны всегда. Звонить сама Вера не может — только откроет звонилку с номером.")));
 
         // ------------------------------------------------ Вера
         var skinIds = Vera.Core.Sprites.Skins.All.Select(x => x.Id).ToArray();
         var petCard = Ui.Card(
-            Ui.H3("🧸 Вера"),
-            Ui.Field("Скин", Choice(skinIds, Vera.Core.Sprites.Skins.All.Select(x => x.Title).ToArray(), s => s.Skin ?? "vera", (s, v) => s.Skin = v)),
-            Ui.Toggle("Иногда болтает сама (без API)", S.Pet.IdleChatter, v => Set(s => s.Pet.IdleChatter = v)),
-            SliderRow("Сколько показывать реплику", 3, 30, 1, s => s.Pet.BubbleSeconds, (s, v) => s.Pet.BubbleSeconds = (int)v, v => (int)v + " с"),
-            Ui.MutedLabel("Тап по Вере — потыкать, долгий тап — сказать голосом. Если долго ничего не делать — она уснёт."));
+            Ui.H3(L10n.T("🧸 Вера")),
+            Ui.Field(L10n.T("Скин"), Choice(skinIds, Vera.Core.Sprites.Skins.All.Select(x => x.Title).ToArray(), s => s.Skin ?? "vera", (s, v) => s.Skin = v)),
+            Ui.Toggle(L10n.T("Иногда болтает сама (без API)"), S.Pet.IdleChatter, v => Set(s => s.Pet.IdleChatter = v)),
+            SliderRow(L10n.T("Сколько показывать реплику"), 3, 30, 1, s => s.Pet.BubbleSeconds, (s, v) => s.Pet.BubbleSeconds = (int)v, v => (int)v + L10n.T(" с")),
+            Ui.MutedLabel(L10n.T("Тап по Вере — потыкать, долгий тап — сказать голосом. Если долго ничего не делать — она уснёт.")));
 
-        var syncBtn = Ui.Primary("Синхронизация с ПК", async (_, _) => await Navigation.PushAsync(new SyncPage()));
+        var syncBtn = Ui.Primary(L10n.T("Синхронизация с ПК"), async (_, _) => await Navigation.PushAsync(new SyncPage()));
         var syncCard = Ui.Card(
-            Ui.H3("💻 Компьютер"),
-            Ui.MutedLabel("Память, напоминания, чат и характер — одинаковые на телефоне и ПК. Связь только в домашней сети, всё шифруется."),
+            Ui.H3(L10n.T("💻 Компьютер")),
+            Ui.MutedLabel(L10n.T("Память, напоминания, чат и характер — одинаковые на телефоне и ПК. Связь только в домашней сети, всё шифруется.")),
             syncBtn);
 
         var about = Ui.Card(
-            Ui.H3("ℹ️ О приложении"),
-            Ui.Label($"Вера v{AppInfo.Current.VersionString} для Android", 14),
-            Ui.MutedLabel("Данные хранятся на телефоне; с ПК — только если привязан (Синхронизация с ПК)."));
+            Ui.H3(L10n.T("ℹ️ О приложении")),
+            Ui.Label(L10n.F("Вера v{0} для Android", AppInfo.Current.VersionString), 14),
+            Ui.MutedLabel(L10n.T("Данные хранятся на телефоне; с ПК — только если привязан (Синхронизация с ПК).")));
 
         Content = new ScrollView
         {
@@ -297,6 +299,19 @@ public sealed class SettingsPage : ContentPage
         base.OnDisappearing();
         SaveModel();
         Core.Settings.Flush();
+    }
+
+    // ================================================================== язык
+
+    /// <summary>Язык интерфейса меняется целиком после перезапуска приложения.</summary>
+    private async Task AskRestartAsync()
+    {
+        var en = S.Language == "en";
+        if ((en ? "en" : "ru") == L10n.Lang) return;
+        var ok = await DisplayAlertAsync(en ? "Restart Vera?" : "Перезапустить Веру?",
+            en ? "The interface language changes after a restart." : "Язык интерфейса сменится после перезапуска.",
+            en ? "Restart" : "Перезапустить", en ? "Later" : "Позже");
+        if (ok) AppRestart.Run();
     }
 
     // ================================================================== помощники привязки
@@ -434,21 +449,21 @@ public sealed class SettingsPage : ContentPage
         var provider = S.Provider;
         if (!Core.Secrets.Has(provider) && provider != "openrouter")
         {
-            Ui.Toast("Сначала добавь ключ этого провайдера");
+            Ui.Toast(L10n.T("Сначала добавь ключ этого провайдера"));
             return;
         }
         IReadOnlyList<ModelInfo> models;
         try
         {
-            Ui.Toast("Загружаю список моделей…");
+            Ui.Toast(L10n.T("Загружаю список моделей…"));
             models = await Task.Run(() => Core.Providers.ListModelsAsync(provider));
         }
         catch (Exception e)
         {
-            await DisplayAlertAsync("Не удалось загрузить модели", e.Message, "OK");
+            await DisplayAlertAsync(L10n.T("Не удалось загрузить модели"), e.Message, "OK");
             return;
         }
-        if (models.Count == 0) { Ui.Toast("Список пуст"); return; }
+        if (models.Count == 0) { Ui.Toast(L10n.T("Список пуст")); return; }
         var page = new ModelPickerPage(models, S.CurrentModel, id =>
         {
             _model.Text = id;
@@ -465,31 +480,31 @@ public sealed class SettingsPage : ContentPage
         var current = S.Provider;
         foreach (var st in Core.Secrets.Status())
         {
-            var entry = Ui.Entry(st.IsSet ? "заменить ключ…" : "вставь ключ…", password: true);
+            var entry = Ui.Entry(st.IsSet ? L10n.T("заменить ключ…") : L10n.T("вставь ключ…"), password: true);
             entry.IsSpellCheckEnabled = false;
             entry.IsTextPredictionEnabled = false;
             var result = Ui.Label("", 12.5, Ui.Muted);
             result.IsVisible = false;
             var name = st.Name;
 
-            var save = Ui.Primary("Сохранить", (_, _) =>
+            var save = Ui.Primary(L10n.T("Сохранить"), (_, _) =>
             {
                 var v = (entry.Text ?? "").Trim();
-                if (v.Length == 0) { Ui.Toast("Вставь ключ в поле"); return; }
+                if (v.Length == 0) { Ui.Toast(L10n.T("Вставь ключ в поле")); return; }
                 Core.Secrets.Set(name, v);
                 entry.Text = "";
-                Ui.Toast("Ключ сохранён");
+                Ui.Toast(L10n.T("Ключ сохранён"));
                 RenderKeys();
                 RefreshProvider();
             });
-            var test = Ui.Ghost("Проверить", async (_, _) =>
+            var test = Ui.Ghost(L10n.T("Проверить"), async (_, _) =>
             {
                 var typed = (entry.Text ?? "").Trim();
                 if (typed.Length > 0) Core.Secrets.Set(name, typed);
-                if (!Core.Secrets.Has(name)) { Ui.Toast("Ключ не задан"); return; }
+                if (!Core.Secrets.Has(name)) { Ui.Toast(L10n.T("Ключ не задан")); return; }
                 result.IsVisible = true;
                 result.TextColor = Ui.Muted;
-                result.Text = "Проверяю…";
+                result.Text = L10n.T("Проверяю…");
                 try
                 {
                     var msg = await Task.Run(() => Core.TestKeyAsync(name));
@@ -511,9 +526,9 @@ public sealed class SettingsPage : ContentPage
             }
             if (st.IsSet)
             {
-                var del = Ui.Ghost("Удалить", async (_, _) =>
+                var del = Ui.Ghost(L10n.T("Удалить"), async (_, _) =>
                 {
-                    if (!await DisplayAlertAsync("Удалить ключ?", st.Title, "Удалить", "Отмена")) return;
+                    if (!await DisplayAlertAsync(L10n.T("Удалить ключ?"), st.Title, L10n.T("Удалить"), L10n.T("Отмена"))) return;
                     Core.Secrets.Set(name, null);
                     RenderKeys();
                     RefreshProvider();
@@ -522,7 +537,7 @@ public sealed class SettingsPage : ContentPage
                 buttons.Children.Add(del);
             }
             var url = st.Url;
-            var link = new Label { Text = "Где взять ключ →", FontSize = 13, TextColor = Color.FromArgb("#f08fc4"), TextDecorations = TextDecorations.Underline };
+            var link = new Label { Text = L10n.T("Где взять ключ →"), FontSize = 13, TextColor = Color.FromArgb("#f08fc4"), TextDecorations = TextDecorations.Underline };
             var tap = new TapGestureRecognizer();
             tap.Tapped += async (_, _) => { try { await Launcher.Default.OpenAsync(new Uri(url)); } catch { } };
             link.GestureRecognizers.Add(tap);
@@ -533,11 +548,11 @@ public sealed class SettingsPage : ContentPage
                 Spacing = 1,
                 Children =
                 {
-                    Ui.Label(st.Title + (st.Name == current ? "  ·  текущий" : ""), 15, Ui.Text, bold: true),
+                    Ui.Label(st.Title + (st.Name == current ? L10n.T("  ·  текущий") : ""), 15, Ui.Text, bold: true),
                     Ui.Label(st.Purpose, 12.5, Ui.Muted),
                 },
             }, 0);
-            head.Add(st.IsSet ? Ui.Tag("✓ " + st.Hint, Ui.Ok.WithAlpha(0.15f), Ui.Ok) : Ui.Tag("не задан"), 1);
+            head.Add(st.IsSet ? Ui.Tag("✓ " + st.Hint, Ui.Ok.WithAlpha(0.15f), Ui.Ok) : Ui.Tag(L10n.T("не задан")), 1);
 
             _keys.Children.Add(new Border
             {
@@ -556,7 +571,7 @@ public sealed class SettingsPage : ContentPage
     private async Task LoadElevenVoicesAsync(bool explicitly)
     {
         var cur = S.Tts.ElevenVoiceId;
-        var items = new List<(string Id, string Name)> { ("", "(по умолчанию)") };
+        var items = new List<(string Id, string Name)> { ("", L10n.T("(по умолчанию)")) };
         if (Core.Secrets.Has("elevenlabs"))
         {
             try
@@ -569,7 +584,7 @@ public sealed class SettingsPage : ContentPage
                 if (explicitly) Ui.Toast(e.Message, true);
             }
         }
-        else if (explicitly) Ui.Toast("Сначала добавь ключ ElevenLabs");
+        else if (explicitly) Ui.Toast(L10n.T("Сначала добавь ключ ElevenLabs"));
         if (cur.Length > 0 && items.All(v => v.Id != cur)) items.Add((cur, cur));
         _loading = true;
         _elevenIds.Clear();
@@ -583,7 +598,7 @@ public sealed class SettingsPage : ContentPage
     {
         if (S.Tts.Engine != "system") return;
         var cur = S.Tts.SystemVoice;
-        var items = new List<(string Id, string Name)> { ("", "(авто, русский)") };
+        var items = new List<(string Id, string Name)> { ("", L10n.T("(авто, русский)")) };
         try { items.AddRange(await App.Speech.SystemVoice.VoicesAsync()); } catch { }
         if (cur.Length > 0 && items.All(v => v.Id != cur)) items.Add((cur, cur));
         _loading = true;
@@ -601,7 +616,7 @@ public sealed class SettingsPage : ContentPage
         if (_loading) return;
         if (on && !await VoiceController.EnsurePermissionAsync())
         {
-            Ui.Toast("Без доступа к микрофону активация по слову не работает", true);
+            Ui.Toast(L10n.T("Без доступа к микрофону активация по слову не работает"), true);
         }
         Core.Settings.Update(s => s.Voice.WakeWord = on);
         _wakeSub.IsVisible = on;
@@ -613,8 +628,8 @@ public sealed class SettingsPage : ContentPage
         _permRows.Children.Clear();
         var notif = ReminderNotifier.Enabled();
         var exact = ReminderScheduler.CanScheduleExact();
-        _permRows.Children.Add(PermRow(notif ? "✓ Уведомления разрешены" : "✗ Уведомления запрещены", notif, PermissionsUi.OpenNotificationSettings));
-        _permRows.Children.Add(PermRow(exact ? "✓ Точные будильники разрешены" : "✗ Нет точных будильников — напоминания могут опаздывать", exact, PermissionsUi.OpenExactAlarmSettings));
+        _permRows.Children.Add(PermRow(notif ? L10n.T("✓ Уведомления разрешены") : L10n.T("✗ Уведомления запрещены"), notif, PermissionsUi.OpenNotificationSettings));
+        _permRows.Children.Add(PermRow(exact ? L10n.T("✓ Точные будильники разрешены") : L10n.T("✗ Нет точных будильников — напоминания могут опаздывать"), exact, PermissionsUi.OpenExactAlarmSettings));
     }
 
     private static View PermRow(string text, bool ok, Action open)
@@ -623,7 +638,7 @@ public sealed class SettingsPage : ContentPage
         var l = Ui.Label(text, 13, ok ? Ui.Ok : Ui.Warn);
         l.VerticalOptions = LayoutOptions.Center;
         g.Add(l, 0);
-        if (!ok) g.Add(Ui.Ghost("Разрешить", (_, _) => open(), Ui.Warn), 1);
+        if (!ok) g.Add(Ui.Ghost(L10n.T("Разрешить"), (_, _) => open(), Ui.Warn), 1);
         return g;
     }
 }
@@ -639,11 +654,11 @@ public sealed class ModelPickerPage : ContentPage
 
     public ModelPickerPage(IReadOnlyList<ModelInfo> models, string current, Action<string> picked)
     {
-        Ui.StylePage(this, "Выбор модели");
+        Ui.StylePage(this, L10n.T("Выбор модели"));
         _models = models.OrderByDescending(m => m.Tools).ThenBy(m => m.Id).ToList();
         _current = current;
         _picked = picked;
-        var search = Ui.Entry("поиск: claude, gpt, gemini…");
+        var search = Ui.Entry(L10n.T("поиск: claude, gpt, gemini…"));
         search.TextChanged += (_, e) => Render(e.NewTextValue);
         Content = new Grid
         {
@@ -664,7 +679,7 @@ public sealed class ModelPickerPage : ContentPage
     {
         q = (q ?? "").Trim().ToLowerInvariant();
         var found = _models.Where(m => q.Length == 0 || m.Id.ToLowerInvariant().Contains(q) || m.Name.ToLowerInvariant().Contains(q)).ToList();
-        _count.Text = $"Найдено: {found.Count}" + (found.Count > 150 ? " (показаны первые 150)" : "") + " · ⚙️ — умеет инструменты, 👁 — видит картинки";
+        _count.Text = L10n.F("Найдено: {0}", found.Count) + (found.Count > 150 ? L10n.T(" (показаны первые 150)") : "") + L10n.T(" · ⚙️ — умеет инструменты, 👁 — видит картинки");
         _list.Children.Clear();
         foreach (var m in found.Take(150))
         {

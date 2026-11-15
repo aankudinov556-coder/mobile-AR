@@ -560,7 +560,7 @@ public sealed partial class SettingsPanel : Grid
         var persona = Combo(Personas.All.Values.Select(p => (p.Id, p.Label)), s => s.Persona, (s, v) => s.Persona = v);
         var prompt = Text(s => s.CustomPrompt, (s, v) => s.CustomPrompt = v, multiline: true,
             placeholder: "Например: я фронтенд-разработчик, отвечай с примерами на TypeScript");
-        var lang = Ui.Combo(new[] { ("ru", "Русский"), ("en", "English") });
+        var lang = Ui.Combo(new[] { ("ru", "RU · Русский"), ("en", "EN · English") });
         _refreshers.Add(() => { if (!lang.IsDropDownOpen) Ui.Select(lang, S.Language == "en" ? "en" : "ru"); });
         lang.SelectionChanged += (_, _) =>
         {

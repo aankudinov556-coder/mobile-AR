@@ -103,7 +103,7 @@ public sealed class VoiceController
         _speech.Stop();
         if (!await EnsurePermissionAsync())
         {
-            Post(() => Notice?.Invoke("Нет доступа к микрофону — разреши его Вере в настройках Android.", "🎙️ микрофон"));
+            Post(() => Notice?.Invoke(L10n.T("Нет доступа к микрофону — разреши его Вере в настройках Android."), L10n.T("🎙️ микрофон")));
             return;
         }
         if (DeviceMode)
@@ -131,7 +131,7 @@ public sealed class VoiceController
         }
         catch (Exception e)
         {
-            Post(() => Notice?.Invoke("Микрофон не включился: " + e.Message, "🎙️ микрофон"));
+            Post(() => Notice?.Invoke(L10n.T("Микрофон не включился: ") + e.Message, L10n.T("🎙️ микрофон")));
             return false;
         }
     }
@@ -184,7 +184,7 @@ public sealed class VoiceController
         catch (Exception e)
         {
             SetState(IdleState(), null);
-            Post(() => Notice?.Invoke(e.Message, "🎙️ распознавание"));
+            Post(() => Notice?.Invoke(e.Message, L10n.T("🎙️ распознавание")));
             return;
         }
         SetState(IdleState(), null);
@@ -337,7 +337,7 @@ public sealed class VoiceController
         if (!d.Start(_core.Settings.Current.Stt.Language))
         {
             _deviceCommand = false;
-            Notice?.Invoke("На телефоне нет службы распознавания речи. Выбери OpenAI или Groq в настройках.", "🎙️ распознавание");
+            Notice?.Invoke(L10n.T("На телефоне нет службы распознавания речи. Выбери OpenAI или Groq в настройках."), L10n.T("🎙️ распознавание"));
             return;
         }
         if (_core.Settings.Current.Voice.Chime) Sfx.ListenStart();
@@ -352,7 +352,7 @@ public sealed class VoiceController
         if (!d.Start(_core.Settings.Current.Stt.Language))
         {
             _deviceWake = false;
-            Notice?.Invoke("Служба распознавания Android недоступна — активация по слову выключена.", "🎙️ распознавание");
+            Notice?.Invoke(L10n.T("Служба распознавания Android недоступна — активация по слову выключена."), L10n.T("🎙️ распознавание"));
             return;
         }
         SetState(RecorderState.Wake, null);
@@ -407,7 +407,7 @@ public sealed class VoiceController
             _deviceCommand = false;
             var soft = reason is "short" or "timeout" or "cancel" or "busy";
             SetState(_deviceWake ? RecorderState.Wake : RecorderState.Off, soft ? reason : null);
-            if (!soft) Notice?.Invoke(reason, "🎙️ распознавание");
+            if (!soft) Notice?.Invoke(reason, L10n.T("🎙️ распознавание"));
             RestartDeviceWakeSoon(1200);
             return;
         }
@@ -418,7 +418,7 @@ public sealed class VoiceController
         {
             _deviceWake = false;
             SetState(RecorderState.Off, null);
-            Notice?.Invoke("Активация по слову остановлена: " + reason, "🎙️ распознавание");
+            Notice?.Invoke(L10n.T("Активация по слову остановлена: ") + reason, L10n.T("🎙️ распознавание"));
         }
     }
 }

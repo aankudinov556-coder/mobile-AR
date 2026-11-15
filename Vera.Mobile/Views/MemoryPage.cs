@@ -8,12 +8,12 @@ public sealed class MemoryPage : ContentPage
     private VeraCore Core => App.Core;
     private readonly Entry _text;
     private readonly VerticalStackLayout _list = new() { Spacing = 8 };
-    private readonly Label _title = Ui.Label("Что Вера знает", 15, Ui.Text, bold: true);
+    private readonly Label _title = Ui.Label(L10n.T("Что Вера знает"), 15, Ui.Text, bold: true);
 
     public MemoryPage()
     {
-        Ui.StylePage(this, "Память");
-        _text = Ui.Entry("Например: Меня зовут Артём, я учусь на программиста");
+        Ui.StylePage(this, L10n.T("Память"));
+        _text = Ui.Entry(L10n.T("Например: Меня зовут Артём, я учусь на программиста"));
         _text.MaxLength = 400;
         _text.ReturnType = ReturnType.Done;
         _text.Completed += (_, _) => Add();
@@ -28,10 +28,10 @@ public sealed class MemoryPage : ContentPage
         addBtn.Clicked += (_, _) => Add();
         addRow.Add(addBtn, 1);
 
-        var clear = Ui.Ghost("Забыть всё", async (_, _) =>
+        var clear = Ui.Ghost(L10n.T("Забыть всё"), async (_, _) =>
         {
             if (Core.Memory.List().Count == 0) return;
-            if (!await DisplayAlertAsync("Забыть всё?", "Вера забудет всё, что знает о тебе. Точно?", "Забыть", "Отмена")) return;
+            if (!await DisplayAlertAsync(L10n.T("Забыть всё?"), L10n.T("Вера забудет всё, что знает о тебе. Точно?"), L10n.T("Забыть"), L10n.T("Отмена"))) return;
             Core.Memory.Clear();
         }, Ui.Danger);
         var titleRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
@@ -48,8 +48,8 @@ public sealed class MemoryPage : ContentPage
                 Children =
                 {
                     Ui.Card(
-                        Ui.H3("Долгая память"),
-                        Ui.MutedLabel("Факты, которые Вера помнит о тебе между разговорами. Она добавляет их сама, но можно и вручную."),
+                        Ui.H3(L10n.T("Долгая память")),
+                        Ui.MutedLabel(L10n.T("Факты, которые Вера помнит о тебе между разговорами. Она добавляет их сама, но можно и вручную.")),
                         addRow),
                     titleRow,
                     _list,
@@ -81,7 +81,7 @@ public sealed class MemoryPage : ContentPage
         {
             Core.Memory.Add(t, "user");
             _text.Text = "";
-            Ui.Toast("Запомнила~");
+            Ui.Toast(L10n.T("Запомнила~"));
         }
         catch (Exception e) { Ui.Toast(e.Message, true); }
     }
@@ -89,9 +89,9 @@ public sealed class MemoryPage : ContentPage
     private void Render()
     {
         var facts = Core.Memory.List();
-        _title.Text = facts.Count > 0 ? $"Что Вера знает ({facts.Count})" : "Что Вера знает";
+        _title.Text = facts.Count > 0 ? L10n.F("Что Вера знает ({0})", facts.Count) : L10n.T("Что Вера знает");
         _list.Children.Clear();
-        if (facts.Count == 0) _list.Children.Add(Ui.MutedLabel("Вера пока ничего о тебе не знает. Расскажи ей о себе!", 14));
+        if (facts.Count == 0) _list.Children.Add(Ui.MutedLabel(L10n.T("Вера пока ничего о тебе не знает. Расскажи ей о себе!"), 14));
         foreach (var m in facts.Reverse()) _list.Children.Add(Item(m));
     }
 
@@ -107,7 +107,7 @@ public sealed class MemoryPage : ContentPage
             {
                 Ui.Icon("ic_edit.png", async (_, _) =>
                 {
-                    var t = await DisplayPromptAsync("Изменить факт", "", "Сохранить", "Отмена", initialValue: m.Text, maxLength: 400);
+                    var t = await DisplayPromptAsync(L10n.T("Изменить факт"), "", L10n.T("Сохранить"), L10n.T("Отмена"), initialValue: m.Text, maxLength: 400);
                     if (string.IsNullOrWhiteSpace(t) || t.Trim() == m.Text) return;
                     Core.Memory.Update(m.Id, t);
                 }, 40, 9),

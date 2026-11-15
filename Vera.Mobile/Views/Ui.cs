@@ -1,4 +1,5 @@
 using Microsoft.Maui.Controls.Shapes;
+using Vera.Core;
 
 namespace Vera.Mobile.Views;
 
@@ -53,7 +54,7 @@ public static class Ui
     /// <summary>Крупный заголовок шрифтом Unbounded.</summary>
     public static Label Heading(string text, double size = 22) => new()
     {
-        Text = text,
+        Text = L10n.T(text),
         FontSize = size,
         FontFamily = Display,
         TextColor = Text,
@@ -69,7 +70,7 @@ public static class Ui
 
     public static Label Label(string text, double size = 15, Color? color = null, bool bold = false) => new()
     {
-        Text = text,
+        Text = L10n.T(text),
         FontSize = size,
         TextColor = color ?? Text,
         FontAttributes = bold ? FontAttributes.Bold : FontAttributes.None,
@@ -80,7 +81,7 @@ public static class Ui
 
     public static Label H3(string text) => new()
     {
-        Text = text,
+        Text = L10n.T(text),
         FontSize = 16,
         FontFamily = DisplayBold,
         TextColor = Text,
@@ -125,7 +126,7 @@ public static class Ui
 
     public static Entry Entry(string placeholder = "", bool password = false) => new()
     {
-        Placeholder = placeholder,
+        Placeholder = L10n.T(placeholder),
         PlaceholderColor = Faint,
         TextColor = Text,
         FontSize = 15,
@@ -136,7 +137,7 @@ public static class Ui
 
     public static Editor Editor(string placeholder = "", double height = 90) => new()
     {
-        Placeholder = placeholder,
+        Placeholder = L10n.T(placeholder),
         PlaceholderColor = Faint,
         TextColor = Text,
         FontSize = 15,
@@ -146,8 +147,8 @@ public static class Ui
 
     public static Picker Picker(IEnumerable<string> items, string title = "") => new()
     {
-        ItemsSource = items.ToList(),
-        Title = title,
+        ItemsSource = items.Select(L10n.T).ToList(),
+        Title = L10n.T(title),
         TitleColor = Muted,
         TextColor = Text,
         FontSize = 15,
@@ -158,7 +159,7 @@ public static class Ui
     {
         var b = new Button
         {
-            Text = text,
+            Text = L10n.T(text),
             TextColor = OnAccent,
             BackgroundColor = Accent,
             BorderColor = Ink,
@@ -178,7 +179,7 @@ public static class Ui
     {
         var b = new Button
         {
-            Text = text,
+            Text = L10n.T(text),
             TextColor = color ?? Text,
             BackgroundColor = Surface2,
             BorderColor = Stroke,
@@ -197,7 +198,7 @@ public static class Ui
     {
         var b = new Button
         {
-            Text = text,
+            Text = L10n.T(text),
             TextColor = Text,
             BackgroundColor = Colors.Transparent,
             BorderColor = Stroke,
@@ -267,7 +268,7 @@ public static class Ui
         StrokeShape = Round(8),
         Padding = new Thickness(7, 2),
         VerticalOptions = LayoutOptions.Center,
-        Content = new Label { Text = text, FontSize = 11.5, TextColor = fg ?? Muted },
+        Content = new Label { Text = L10n.T(text), FontSize = 11.5, TextColor = fg ?? Muted },
     };
 
     /// <summary>Квадратная кнопка-иконка 44×44 с обводкой (шапки экранов).</summary>
@@ -285,7 +286,7 @@ public static class Ui
             BorderWidth = 2,
             VerticalOptions = LayoutOptions.Center,
         };
-        if (description is not null) SemanticProperties.SetDescription(b, description);
+        if (description is not null) SemanticProperties.SetDescription(b, L10n.T(description));
         b.Clicked += onClick;
         return b;
     }
@@ -296,7 +297,7 @@ public static class Ui
         var back = SquareIcon("ic_back.png", async (_, _) =>
         {
             try { await page.Navigation.PopAsync(); } catch { }
-        }, "Назад");
+        }, L10n.T("Назад"));
         var g = new Grid
         {
             Padding = new Thickness(16, 14, 16, 10),
@@ -314,7 +315,7 @@ public static class Ui
     /// <summary>Подпись раздела: мелкие прописные буквы с разрядкой.</summary>
     public static Label Caps(string text, Color? color = null) => new()
     {
-        Text = text.ToUpperInvariant(),
+        Text = L10n.T(text).ToUpperInvariant(),
         FontSize = 12,
         FontFamily = FontBold,
         CharacterSpacing = 1,
@@ -334,20 +335,32 @@ public static class Ui
 
     public static ContentPage StylePage(ContentPage page, string title)
     {
-        page.Title = title;
+        page.Title = L10n.T(title);
         page.BackgroundColor = Bg;
         page.SafeAreaEdges = SafeAreaEdges.All;
         return page;
     }
 
     /// <summary>Короткое системное уведомление внизу экрана.</summary>
+    /// <summary>Меню действий на языке интерфейса; возвращает исходную (русскую) строку выбранного пункта.</summary>
+    public static async Task<string?> ActionSheetAsync(Page page, string title, string? destruction, params string[] buttons)
+    {
+        var shown = buttons.Select(L10n.T).ToArray();
+        var d = destruction is null ? null : L10n.T(destruction);
+        var r = await page.DisplayActionSheetAsync(L10n.T(title), L10n.T("Отмена"), d, shown);
+        if (r is null) return null;
+        if (d is not null && r == d) return destruction;
+        var i = Array.IndexOf(shown, r);
+        return i >= 0 ? buttons[i] : r;
+    }
+
     public static void Toast(string text, bool longer = false)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
             try
             {
-                Android.Widget.Toast.MakeText(Android.App.Application.Context, text,
+                Android.Widget.Toast.MakeText(Android.App.Application.Context, L10n.T(text),
                     longer ? Android.Widget.ToastLength.Long : Android.Widget.ToastLength.Short)?.Show();
             }
             catch { /* нет UI — не страшно */ }

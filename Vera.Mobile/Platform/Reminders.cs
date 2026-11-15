@@ -77,9 +77,9 @@ public static class ReminderNotifier
         if (Build.VERSION.SdkInt < BuildVersionCodes.O) return;
         var nm = (NotificationManager?)Ctx.GetSystemService(Context.NotificationService);
         if (nm is null || nm.GetNotificationChannel(Channel) is not null) return;
-        var ch = new NotificationChannel(Channel, "Напоминания", NotificationImportance.High)
+        var ch = new NotificationChannel(Channel, L10n.T("Напоминания"), NotificationImportance.High)
         {
-            Description = "Напоминания, таймеры и будильники Веры",
+            Description = L10n.T("Напоминания, таймеры и будильники Веры"),
         };
         ch.EnableVibration(true);
         ch.EnableLights(true);
@@ -121,7 +121,7 @@ public static class ReminderNotifier
 
         var b = new NotificationCompat.Builder(ctx, Channel)
             .SetSmallIcon(icon)!
-            .SetContentTitle((missed ? "⏰ Пропущено: " : "⏰ ") + r.Text)!
+            .SetContentTitle((missed ? L10n.T("⏰ Пропущено: ") : "⏰ ") + r.Text)!
             .SetContentText(phrase)!
             .SetStyle(new NotificationCompat.BigTextStyle().BigText(phrase))!
             .SetCategory(NotificationCompat.CategoryReminder)!
@@ -132,8 +132,8 @@ public static class ReminderNotifier
             .SetShowWhen(true)!
             .SetSilent(!sound)!
             .SetContentIntent(contentPi)!
-            .AddAction(0, "Готово", ReminderReceiver.ActionIntent(ReminderReceiver.ActionDone, r.Id, nid))!
-            .AddAction(0, "+10 мин", ReminderReceiver.ActionIntent(ReminderReceiver.ActionSnooze, r.Id, nid))!;
+            .AddAction(0, L10n.T("Готово"), ReminderReceiver.ActionIntent(ReminderReceiver.ActionDone, r.Id, nid))!
+            .AddAction(0, L10n.T("+10 мин"), ReminderReceiver.ActionIntent(ReminderReceiver.ActionSnooze, r.Id, nid))!;
         if (sound) b.SetDefaults(NotificationCompat.DefaultAll);
         try { NotificationManagerCompat.From(ctx).Notify(nid, b.Build()); }
         catch (Java.Lang.SecurityException) { /* нет разрешения POST_NOTIFICATIONS */ }
@@ -258,7 +258,7 @@ public sealed class ReminderReceiver : BroadcastReceiver
                 case ActionSnooze:
                     ReminderNotifier.Cancel(id);
                     var r = core.Reminders.Snooze(id, 10);
-                    if (r is not null) Views.Ui.Toast("Напомню в " + r.Due.ToLocalTime().ToString("HH:mm"));
+                    if (r is not null) Views.Ui.Toast(L10n.T("Напомню в ") + r.Due.ToLocalTime().ToString("HH:mm"));
                     break;
             }
             core.Reminders.Flush();

@@ -22,7 +22,7 @@ public sealed class SyncPage : ContentPage
 
     public SyncPage()
     {
-        Ui.StylePage(this, "Синхронизация");
+        Ui.StylePage(this, L10n.T("Синхронизация"));
         NavigationPage.SetHasNavigationBar(this, false);
         if (!_syncHooked)
         {
@@ -34,7 +34,7 @@ public sealed class SyncPage : ContentPage
             RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star) },
             BackgroundColor = Ui.Bg,
         };
-        root.Add(Ui.PageHeader(this, "Синхронизация"), 0, 0);
+        root.Add(Ui.PageHeader(this, L10n.T("Синхронизация")), 0, 0);
         root.Add(new ScrollView { Content = _root }, 0, 1);
         Content = root;
         Appearing += (_, _) => { PhoneSync.StateChanged += OnState; Render(); };
@@ -48,20 +48,20 @@ public sealed class SyncPage : ContentPage
     {
         if (_busy) return;
         _busy = true;
-        _message = "Связываюсь с ПК…";
+        _message = L10n.T("Связываюсь с ПК…");
         _messageError = false;
         Render();
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40));
             var pc = await Task.Run(() => Core.Sync.PairAsync(qr.Trim(), cts.Token));
-            _message = $"Связана с ПК «{pc.Name}». Память, напоминания и чат синхронизированы.";
+            _message = L10n.F("Связана с ПК «{0}». Память, напоминания и чат синхронизированы.", pc.Name);
             PhoneSync.ScheduleBackground();
             try { HapticFeedback.Default.Perform(HapticFeedbackType.Click); } catch { }
         }
         catch (Exception e)
         {
-            _message = e is SyncException ? e.Message : "Не получилось: " + e.Message;
+            _message = e is SyncException ? e.Message : L10n.T("Не получилось: ") + e.Message;
             _messageError = true;
         }
         finally
@@ -75,14 +75,14 @@ public sealed class SyncPage : ContentPage
     {
         if (_busy) return;
         _busy = true;
-        _message = "Синхронизирую…";
+        _message = L10n.T("Синхронизирую…");
         _messageError = false;
         Render();
         try
         {
             var r = await PhoneSync.SyncNowAsync(quiet: false);
             if (r is not null) _lastReceived = r.Received;
-            _message = r is null ? "Синхронизация уже идёт" : $"Готово: получено {r.Received}, отправлено {r.Sent}.";
+            _message = r is null ? L10n.T("Синхронизация уже идёт") : L10n.F("Готово: получено {0}, отправлено {1}.", r.Received, r.Sent);
         }
         catch (Exception e)
         {
@@ -165,10 +165,10 @@ public sealed class SyncPage : ContentPage
             var pc = peers[0];
             // золотая карточка «Связана с ПК»
             var synced = pc.LastSync is { } t
-                ? "Синхронизировано " + (DateTimeOffset.Now - t < TimeSpan.FromMinutes(1) ? "только что" : RuText.Relative(t))
-                : "Ещё не синхронизировалась";
+                ? L10n.T("Синхронизировано ") + (DateTimeOffset.Now - t < TimeSpan.FromMinutes(1) ? L10n.T("только что") : RuText.Relative(t))
+                : L10n.T("Ещё не синхронизировалась");
             if (pc.LastSync is not null && _lastReceived is { } n)
-                synced += $" · получено {n} {RuText.Plural(n, "изменение", "изменения", "изменений")}";
+                synced += L10n.F(" · получено {0} {1}", n, RuText.Plural(n, L10n.T("изменение"), L10n.T("изменения"), L10n.T("изменений")));
             var info = new VerticalStackLayout
             {
                 Spacing = 6,
@@ -176,7 +176,7 @@ public sealed class SyncPage : ContentPage
                 Padding = new Thickness(0, 0, 0, 18),
                 Children =
                 {
-                    Ui.Caps("Связана с ПК", Ui.OnAccent),
+                    Ui.Caps(L10n.T("Связана с ПК"), Ui.OnAccent),
                     new Label { Text = "«" + pc.Name + "»", FontSize = 22, FontFamily = Ui.Display, TextColor = Ui.OnAccent, LineBreakMode = LineBreakMode.TailTruncation },
                     new Label { Text = synced, FontSize = 13, TextColor = Ui.OnAccent, LineBreakMode = LineBreakMode.WordWrap },
                 },
@@ -202,7 +202,7 @@ public sealed class SyncPage : ContentPage
                 Margin = new Thickness(0, 0, 4, 4),
                 Content = g,
             });
-            var now = DarkSticker(_busy ? "Синхронизирую…" : "Синхронизировать сейчас", (_, _) => SyncNow());
+            var now = DarkSticker(_busy ? L10n.T("Синхронизирую…") : L10n.T("Синхронизировать сейчас"), (_, _) => SyncNow());
             now.IsEnabled = !_busy;
             _root.Children.Add(now);
         }
@@ -220,10 +220,10 @@ public sealed class SyncPage : ContentPage
             Spacing = 0,
             Children =
             {
-                new ContentView { Padding = new Thickness(16, 12, 16, 4), Content = Ui.Caps("Что общее") },
-                ShareRow("Память и напоминания", null, true, null, false),
-                ShareRow("История чата", null, s.Sync.Chat, v => Core.Settings.Update(x => x.Sync.Chat = v), false),
-                ShareRow("API-ключи", "Только недостающие, по шифрованному каналу; галочка нужна и на ПК", s.Sync.Keys,
+                new ContentView { Padding = new Thickness(16, 12, 16, 4), Content = Ui.Caps(L10n.T("Что общее")) },
+                ShareRow(L10n.T("Память и напоминания"), null, true, null, false),
+                ShareRow(L10n.T("История чата"), null, s.Sync.Chat, v => Core.Settings.Update(x => x.Sync.Chat = v), false),
+                ShareRow(L10n.T("API-ключи"), L10n.T("Только недостающие, по шифрованному каналу; галочка нужна и на ПК"), s.Sync.Keys,
                     v => Core.Settings.Update(x => x.Sync.Keys = v), true),
             },
         };
@@ -246,7 +246,7 @@ public sealed class SyncPage : ContentPage
             RowSpacing = 8,
         };
         var i = 0;
-        foreach (var (id, text) in new[] { ("both", "На обоих"), ("active", "Где я сейчас"), ("pc", "Только ПК"), ("phone", "Только телефон") })
+        foreach (var (id, text) in new[] { ("both", L10n.T("На обоих")), ("active", L10n.T("Где я сейчас")), ("pc", L10n.T("Только ПК")), ("phone", L10n.T("Только телефон")) })
         {
             var on = s.Sync.RingOn == id;
             var b = new Button
@@ -272,21 +272,21 @@ public sealed class SyncPage : ContentPage
             Spacing = 8,
             Children =
             {
-                Ui.Caps("Где звенят напоминания"),
+                Ui.Caps(L10n.T("Где звенят напоминания")),
                 ring,
-                new Label { Text = "«Где я сейчас» — на ПК, если его трогали последние 5 минут, иначе на телефоне.", FontSize = 12, TextColor = Ui.Faint },
+                new Label { Text = L10n.T("«Где я сейчас» — на ПК, если его трогали последние 5 минут, иначе на телефоне."), FontSize = 12, TextColor = Ui.Faint },
             },
         });
 
-        var name = Ui.Entry("Имя телефона");
+        var name = Ui.Entry(L10n.T("Имя телефона"));
         name.Text = Core.Sync.DeviceName;
         name.Unfocused += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) Core.Sync.DeviceName = name.Text; };
-        _root.Children.Add(new VerticalStackLayout { Spacing = 8, Children = { Ui.Caps("Как ПК видит этот телефон"), Ui.Box(name) } });
+        _root.Children.Add(new VerticalStackLayout { Spacing = 8, Children = { Ui.Caps(L10n.T("Как ПК видит этот телефон")), Ui.Box(name) } });
 
         // «Отвязать» — красная обводка внизу
         var unpair = new Button
         {
-            Text = $"Отвязать ПК «{peers[0].Name}»",
+            Text = L10n.F("Отвязать ПК «{0}»", peers[0].Name),
             FontFamily = Ui.FontBold,
             FontSize = 14,
             TextColor = Ui.Danger,
@@ -300,7 +300,7 @@ public sealed class SyncPage : ContentPage
         };
         unpair.Clicked += async (_, _) =>
         {
-            if (!await DisplayAlertAsync("Отвязать ПК?", "Синхронизация остановится. Данные на обоих устройствах останутся.", "Отвязать", "Отмена")) return;
+            if (!await DisplayAlertAsync(L10n.T("Отвязать ПК?"), L10n.T("Синхронизация остановится. Данные на обоих устройствах останутся."), L10n.T("Отвязать"), L10n.T("Отмена"))) return;
             foreach (var p in Core.Sync.Peers) Core.Sync.Unpair(p.Id);
             PhoneSync.ScheduleBackground();
             _message = null;
@@ -317,11 +317,11 @@ public sealed class SyncPage : ContentPage
             Spacing = 8,
             Children =
             {
-                Ui.Caps("Не связана"),
-                Ui.Heading("Связать с ПК", 20),
-                Ui.Label("1. На ПК открой Веру → Настройки → Телефон → «Привязать телефон».", 14),
-                Ui.Label("2. Наведи обычную камеру телефона на QR-код — Вера откроется и привяжется сама.", 14),
-                Ui.Label("3. Телефон и ПК должны быть в одной домашней сети Wi-Fi.", 14),
+                Ui.Caps(L10n.T("Не связана")),
+                Ui.Heading(L10n.T("Связать с ПК"), 20),
+                Ui.Label(L10n.T("1. На ПК открой Веру → Настройки → Телефон → «Привязать телефон»."), 14),
+                Ui.Label(L10n.T("2. Наведи обычную камеру телефона на QR-код — Вера откроется и привяжется сама."), 14),
+                Ui.Label(L10n.T("3. Телефон и ПК должны быть в одной домашней сети Wi-Fi."), 14),
             },
         };
         var g = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
@@ -341,8 +341,8 @@ public sealed class SyncPage : ContentPage
             Content = g,
         });
 
-        var code = Ui.Editor("Или вставь сюда ссылку из QR (vera-sync://…)", 80);
-        var pair = Ui.Primary(_busy ? "Связываюсь…" : "Привязать", (_, _) =>
+        var code = Ui.Editor(L10n.T("Или вставь сюда ссылку из QR (vera-sync://…)"), 80);
+        var pair = Ui.Primary(_busy ? L10n.T("Связываюсь…") : L10n.T("Привязать"), (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(code.Text)) Pair(code.Text);
         });
@@ -350,7 +350,7 @@ public sealed class SyncPage : ContentPage
         pair.CornerRadius = 16;
         pair.MinimumHeightRequest = 50;
         pair.Margin = new Thickness(0, 0, 3, 3);
-        var paste = Ui.Ghost("Вставить из буфера", async (_, _) =>
+        var paste = Ui.Ghost(L10n.T("Вставить из буфера"), async (_, _) =>
         {
             try { code.Text = await Clipboard.Default.GetTextAsync(); } catch { }
         });
@@ -361,7 +361,7 @@ public sealed class SyncPage : ContentPage
             StrokeThickness = 2,
             StrokeShape = Ui.Round(18),
             Padding = new Thickness(16, 14),
-            Content = new VerticalStackLayout { Spacing = 10, Children = { Ui.Caps("Код привязки"), Ui.Box(code, 80), paste, pair } },
+            Content = new VerticalStackLayout { Spacing = 10, Children = { Ui.Caps(L10n.T("Код привязки")), Ui.Box(code, 80), paste, pair } },
         });
     }
 }

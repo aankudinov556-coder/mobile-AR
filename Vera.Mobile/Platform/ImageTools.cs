@@ -1,3 +1,4 @@
+using Vera.Core;
 using Android.Graphics;
 using Android.Media;
 
@@ -10,11 +11,11 @@ public static class ImageTools
     {
         var bounds = new BitmapFactory.Options { InJustDecodeBounds = true };
         BitmapFactory.DecodeByteArray(data, 0, data.Length, bounds);
-        if (bounds.OutWidth <= 0 || bounds.OutHeight <= 0) throw new InvalidOperationException("Не получилось прочитать картинку");
+        if (bounds.OutWidth <= 0 || bounds.OutHeight <= 0) throw new InvalidOperationException(L10n.T("Не получилось прочитать картинку"));
         var sample = 1;
         while (Math.Max(bounds.OutWidth, bounds.OutHeight) / (sample * 2) >= maxSide) sample *= 2;
         var bmp = BitmapFactory.DecodeByteArray(data, 0, data.Length, new BitmapFactory.Options { InSampleSize = sample })
-                  ?? throw new InvalidOperationException("Не получилось прочитать картинку");
+                  ?? throw new InvalidOperationException(L10n.T("Не получилось прочитать картинку"));
 
         var rotate = 0;
         try

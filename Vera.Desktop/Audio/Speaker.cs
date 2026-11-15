@@ -31,7 +31,7 @@ public static class SystemVoice
         using var synth = new SpeechSynthesizer();
         var voices = SpeechSynthesizer.AllVoices;
         var voice = voices.FirstOrDefault(v => !string.IsNullOrEmpty(voiceName) && v.DisplayName == voiceName)
-                    ?? voices.FirstOrDefault(v => v.Language.StartsWith("ru", StringComparison.OrdinalIgnoreCase));
+                    ?? voices.FirstOrDefault(v => v.Language.StartsWith(Vera.Core.L10n.English ? "en" : "ru", StringComparison.OrdinalIgnoreCase));
         if (voice is not null) synth.Voice = voice;
         try
         {

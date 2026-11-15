@@ -60,7 +60,7 @@ public partial class App : Application
             BarTextColor = Ui.Text,
             BackgroundColor = Ui.Bg,
         };
-        var window = new Window(nav) { Title = "Вера" };
+        var window = new Window(nav) { Title = L10n.T("Вера") };
         window.Created += (_, _) => OnForeground();
         window.Resumed += (_, _) => OnForeground();
         window.Activated += (_, _) => { if (!AppState.IsForeground) OnForeground(); };
@@ -123,7 +123,7 @@ public partial class App : Application
             }
             catch (Exception e)
             {
-                Ui.Toast("Не получилось открыть привязку: " + e.Message, true);
+                Ui.Toast(L10n.T("Не получилось открыть привязку: ") + e.Message, true);
             }
         });
     }

@@ -1,3 +1,5 @@
+using Vera.Core;
+
 namespace Vera.Mobile.Views;
 
 /// <summary>Состояние чипа инструмента в сообщении.</summary>
@@ -63,7 +65,7 @@ public sealed class MessageView : ContentView
             try
             {
                 await Clipboard.Default.SetTextAsync(_text);
-                Ui.Toast("Сообщение скопировано");
+                Ui.Toast(L10n.T("Сообщение скопировано"));
             }
             catch { }
         };
@@ -85,7 +87,7 @@ public sealed class MessageView : ContentView
         }
         else if (hadImage)
         {
-            stack.Children.Add(new Label { Text = "📎 изображение", FontSize = 12, TextColor = Ui.OnAccent.WithAlpha(0.8f) });
+            stack.Children.Add(new Label { Text = L10n.T("📎 изображение"), FontSize = 12, TextColor = Ui.OnAccent.WithAlpha(0.8f) });
         }
         if (!string.IsNullOrWhiteSpace(text))
             stack.Children.Add(new Label { Text = text, TextColor = Ui.OnAccent, FontSize = 15, FontFamily = Ui.Font, LineBreakMode = LineBreakMode.WordWrap });
@@ -137,25 +139,25 @@ public sealed class MessageView : ContentView
 
     public static string Human(string name) => name switch
     {
-        "create_reminder" => "ставлю напоминание",
-        "list_reminders" => "смотрю напоминания",
-        "delete_reminder" => "удаляю напоминание",
-        "update_reminder" => "меняю напоминание",
-        "remember" => "запоминаю",
-        "forget" => "забываю",
-        "get_weather" => "смотрю погоду",
-        "get_device_info" => "смотрю телефон",
-        "open_url" => "открываю ссылку",
-        "search_web" => "ищу",
-        "open_app" => "запускаю приложение",
-        "dial_number" => "открываю звонилку",
-        "open_maps" => "открываю карты",
-        "share_text" => "делюсь",
-        "flashlight" => "щёлкаю фонариком",
-        "open_settings" => "открываю настройки",
-        "clipboard_read" => "читаю буфер",
-        "clipboard_write" => "копирую",
-        "web_search" => "ищу в интернете",
+        "create_reminder" => L10n.T("ставлю напоминание"),
+        "list_reminders" => L10n.T("смотрю напоминания"),
+        "delete_reminder" => L10n.T("удаляю напоминание"),
+        "update_reminder" => L10n.T("меняю напоминание"),
+        "remember" => L10n.T("запоминаю"),
+        "forget" => L10n.T("забываю"),
+        "get_weather" => L10n.T("смотрю погоду"),
+        "get_device_info" => L10n.T("смотрю телефон"),
+        "open_url" => L10n.T("открываю ссылку"),
+        "search_web" => L10n.T("ищу"),
+        "open_app" => L10n.T("запускаю приложение"),
+        "dial_number" => L10n.T("открываю звонилку"),
+        "open_maps" => L10n.T("открываю карты"),
+        "share_text" => L10n.T("делюсь"),
+        "flashlight" => L10n.T("щёлкаю фонариком"),
+        "open_settings" => L10n.T("открываю настройки"),
+        "clipboard_read" => L10n.T("читаю буфер"),
+        "clipboard_write" => L10n.T("копирую"),
+        "web_search" => L10n.T("ищу в интернете"),
         _ => name,
     };
 }

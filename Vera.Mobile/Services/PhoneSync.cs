@@ -81,7 +81,7 @@ public static class PhoneSync
         }
         catch (Exception e)
         {
-            LastError = e is SyncException ? e.Message : "Не удалось связаться с ПК: " + e.Message;
+            LastError = e is SyncException ? e.Message : L10n.T("Не удалось связаться с ПК: ") + e.Message;
             if (!quiet) throw;
         }
         finally

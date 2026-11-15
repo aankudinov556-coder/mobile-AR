@@ -37,6 +37,7 @@ public static class RuText
 
     public static string Plural(long n, string one, string few, string many)
     {
+        if (L10n.English) return Math.Abs(n) == 1 ? one : many;
         var a = Math.Abs(n) % 100;
         var b = a % 10;
         if (a > 10 && a < 20) return many;

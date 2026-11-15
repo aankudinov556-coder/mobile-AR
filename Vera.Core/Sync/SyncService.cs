@@ -199,7 +199,9 @@ public sealed class SyncService
         var s = _settings.Current;
         if (s.Sync.Chat)
             b.Chat = _agent.ExportTurns(since, peer.Id).Where(t => t[0].Seq <= upTo).ToList();
-        if (s.Sync.Keys && st.KeysSeq > since)
+        // ключи — при каждой встрече, если передача разрешена (их мало, канал шифрованный;
+        // принимающая сторона заполняет только недостающие и только если у неё тоже разрешено)
+        if (s.Sync.Keys)
         {
             b.Keys = SecretsService.Known.Where(k => _keys.Has(k.Name)).ToDictionary(k => k.Name, k => _keys.Get(k.Name));
         }

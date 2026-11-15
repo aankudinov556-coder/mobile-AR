@@ -150,6 +150,29 @@ public class SyncTests : IDisposable
     }
 
     [Fact]
+    public async Task KeysGoWhenEnabledAfterTheyWereSet()
+    {
+        _pc.Secrets.Set("openrouter", "sk-or-before");
+        _pc.Secrets.Set("openai", "sk-oa-before");
+        var peer = await Pair();
+        // галочку включили уже после того, как ключи были на ПК, — ключи больше не меняются
+        _pc.Settings.Update(s => s.Sync.Keys = true);
+        _phone.Settings.Update(s => s.Sync.Keys = true);
+        await _phone.Sync.SyncAsync(peer);
+        Assert.Equal("sk-or-before", _phone.Secrets.Get("openrouter"));
+        Assert.Equal("sk-oa-before", _phone.Secrets.Get("openai"));
+
+        // и в обратную сторону: ключ, который есть только на телефоне
+        _phone.Secrets.Set("groq", "gsk-phone");
+        await _phone.Sync.SyncAsync(peer);
+        Assert.Equal("gsk-phone", _pc.Secrets.Get("groq"));
+        // свой ключ не перезаписывается чужим
+        _phone.Secrets.Set("openrouter", "sk-or-phone");
+        await _phone.Sync.SyncAsync(peer);
+        Assert.Equal("sk-or-before", _pc.Secrets.Get("openrouter"));
+    }
+
+    [Fact]
     public async Task WrongOrExpiredCodeIsRejected()
     {
         var qr = Qr();

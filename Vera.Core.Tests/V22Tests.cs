@@ -271,3 +271,31 @@ public class SettingsTransferTests
         Assert.Empty(SettingsPresets.MissingKeys("offline", _ => false));
     }
 }
+
+public class BossPersonaTests
+{
+    [Fact]
+    public void BossIsDefaultAndOldDefaultMigrates()
+    {
+        Assert.Equal("boss", new SettingsService(new MemStorage()).Current.Persona);
+        var st = new MemStorage();
+        st.WriteText("settings.json", "{\"persona\":\"tease\"}");
+        Assert.Equal("boss", new SettingsService(st).Current.Persona);
+        // выбранный вручную после миграции — не трогаем
+        var s2 = new SettingsService(st);
+        s2.Update(x => x.Persona = "tease");
+        s2.Flush();
+        Assert.Equal("tease", new SettingsService(st).Current.Persona);
+    }
+
+    [Fact]
+    public void BossHasAllLinesAndPrompt()
+    {
+        foreach (var kind in new[] { "greetMorning", "greetDay", "greetEvening", "greetNight", "poke", "drag", "idle", "reminder", "missed", "listening", "noKey", "notHeard" })
+            Assert.False(string.IsNullOrWhiteSpace(Personas.Line("boss", kind, "Андрей", "полить цветы")), kind);
+        Assert.Contains("полить цветы", Personas.Line("boss", "reminder", "Андрей", "полить цветы"));
+        var p = Personas.BuildSystemPrompt(new VeraSettings { Persona = "boss", Skin = "chibi" }, "", Array.Empty<string>(), "desktop");
+        Assert.Contains("Характер:", p);
+        Assert.Contains("нимб", p);
+    }
+}

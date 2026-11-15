@@ -94,8 +94,10 @@ public sealed class VeraSettings
     public int HistoryLimit { get; set; } = 40;
 
     public string UserName { get; set; } = "семпай";
-    /// <summary>"tease" | "sweet" | "business" | "tsundere"</summary>
-    public string Persona { get; set; } = "tease";
+    /// <summary>"boss" | "tease" | "sweet" | "business" | "tsundere"</summary>
+    public string Persona { get; set; } = "boss";
+    /// <summary>Номер миграции характера (v2.4: «дерзкая» по умолчанию заменена на «строгую начальницу»).</summary>
+    public int PersonaRev { get; set; }
     public string CustomPrompt { get; set; } = "";
 
     public SttSettings Stt { get; set; } = new();
@@ -112,6 +114,8 @@ public sealed class VeraSettings
     public LocalModelSettings Local { get; set; } = new();
     public DiagnosticsSettings Diagnostics { get; set; } = new();
     /// <summary>Синхронизация с телефоном.</summary>
+    /// <summary>Город для погоды на главном экране и в утренней сводке.</summary>
+    public string City { get; set; } = "";
     public SyncSettings Sync { get; set; } = new();
     public bool Autostart { get; set; }
     /// <summary>"auto" | "dark" | "light"</summary>
@@ -277,6 +281,13 @@ public sealed class SettingsService
         // новые провайдеры по умолчанию, если в старом файле их нет
         foreach (var p in new[] { "openrouter", "anthropic", "openai", "custom", "local" })
             if (!_file.Data.Models.ContainsKey(p)) _file.Data.Models[p] = VeraSettings.DefaultModel(p);
+        // v2.4: характер по умолчанию заменён — переводим тех, у кого стоял прежний
+        if (_file.Data.PersonaRev < 1)
+        {
+            if (_file.Data.Persona == "tease") _file.Data.Persona = Personas.Default;
+            _file.Data.PersonaRev = 1;
+            _file.Save();
+        }
     }
 
     /// <summary>Текущие настройки (живой объект — не меняйте его напрямую, используйте Update).</summary>

@@ -26,7 +26,10 @@ public static class Ui
 
     // ------------------------------------------------------------ fonts
 
-    public static readonly FontFamily Font = new("Segoe UI Variable Text, Segoe UI, Segoe UI Emoji, Segoe UI Symbol");
+    /// <summary>Основной шрифт — Onest (встроен в программу), эмодзи и символы — из Segoe.</summary>
+    public static readonly FontFamily Font = new(new Uri("pack://application:,,,/"), "./assets/fonts/#Onest, Segoe UI, Segoe UI Emoji, Segoe UI Symbol");
+    /// <summary>Заголовки, имя Веры, крупные цифры — Unbounded.</summary>
+    public static readonly FontFamily Display = new(new Uri("pack://application:,,,/"), "./assets/fonts/#Unbounded, Segoe UI Black, Segoe UI");
     public static readonly FontFamily Mono = new("Cascadia Code, Cascadia Mono, Consolas, Courier New");
 
     public static Style? Style(string key) => Application.Current.TryFindResource(key) as Style;
@@ -55,7 +58,20 @@ public static class Ui
 
     public static TextBlock Muted(string text, double size = 12) => Text(text, size, "Muted");
 
-    public static TextBlock Title(string text) => Text(text, 14.5, "Fg", FontWeights.Bold);
+    public static TextBlock Title(string text)
+    {
+        var t = Text(text, 15, "Fg", FontWeights.Bold);
+        t.FontFamily = Display;
+        return t;
+    }
+
+    /// <summary>Крупный заголовок шрифтом Unbounded.</summary>
+    public static TextBlock Heading(string text, double size = 22, FontWeight? weight = null)
+    {
+        var t = Text(text, size, "Fg", weight ?? FontWeights.Black, wrap: false);
+        t.FontFamily = Display;
+        return t;
+    }
 
     // ------------------------------------------------------------ buttons
 

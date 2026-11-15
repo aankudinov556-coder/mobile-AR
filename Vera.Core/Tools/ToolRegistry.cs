@@ -233,6 +233,31 @@ public sealed class ToolRegistry
         [82] = "сильный ливень", [85] = "снегопад", [86] = "сильный снегопад", [95] = "гроза", [96] = "гроза с градом", [99] = "гроза с градом",
     };
 
+    /// <summary>Погода сейчас и на сегодня — для панели «Сегодня» (null — город не найден).</summary>
+    public async Task<WeatherNow?> WeatherNowAsync(string city, CancellationToken ct = default)
+    {
+        city = (city ?? "").Trim();
+        if (city.Length == 0) return null;
+        var geo = JsonNode.Parse(await _http.GetStringAsync(
+            $"https://geocoding-api.open-meteo.com/v1/search?count=1&language=ru&name={Uri.EscapeDataString(city)}", ct).ConfigureAwait(false));
+        var place = geo?["results"]?[0];
+        if (place is null) return null;
+        var lat = place["latitude"]!.GetValue<double>().ToString(CultureInfo.InvariantCulture);
+        var lon = place["longitude"]!.GetValue<double>().ToString(CultureInfo.InvariantCulture);
+        var w = JsonNode.Parse(await _http.GetStringAsync(
+            $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" +
+            "&current=temperature_2m,weather_code,wind_speed_10m" +
+            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1&wind_speed_unit=ms",
+            ct).ConfigureAwait(false))!;
+        var c = w["current"]!;
+        int R(JsonNode? n) => (int)Math.Round(n?.GetValue<double>() ?? 0);
+        var code = c["weather_code"]?.GetValue<int>() ?? 0;
+        var d = w["daily"];
+        return new WeatherNow(place["name"]?.GetValue<string>() ?? city, R(c["temperature_2m"]),
+            Wmo.TryGetValue(code, out var desc) ? desc : "", R(c["wind_speed_10m"]),
+            R(d?["temperature_2m_min"]?[0]), R(d?["temperature_2m_max"]?[0]), d?["precipitation_probability_max"]?[0]?.GetValue<int>());
+    }
+
     private async Task<ToolResult> WeatherAsync(string city, CancellationToken ct)
     {
         city = city.Trim();
@@ -269,3 +294,6 @@ public sealed class ToolRegistry
         return ToolResult.Ok(string.Join("\n", lines), $"🌦️ {name}: {R(c["temperature_2m"])}°C");
     }
 }
+
+/// <summary>Погода для главного экрана.</summary>
+public sealed record WeatherNow(string Place, int Temp, string Description, int Wind, int Min, int Max, int? Precip);

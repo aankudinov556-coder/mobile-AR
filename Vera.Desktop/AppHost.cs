@@ -11,6 +11,7 @@ using Microsoft.Toolkit.Uwp.Notifications;
 using Microsoft.Win32;
 using Vera.Core;
 using Vera.Core.Agent;
+using Vera.Core.Commands;
 using Vera.Core.Providers;
 using Vera.LocalAI;
 using Vera.Desktop.Audio;
@@ -52,7 +53,7 @@ public static class Log
 /// Сердце ПК-версии: создаёт ядро, окна, трей, горячие клавиши, голос, уведомления и связывает их
 /// (роль src/main/main.js). Все методы — в потоке UI.
 /// </summary>
-public sealed class AppHost : IToolHost
+public sealed class AppHost : IToolHost, ICommandHost
 {
     private sealed record Snapshot(string Hotkeys, int Scale, bool Topmost, bool PetVisible, bool Autostart, string Theme, string Voice, string Mic, string Skin)
     {
@@ -134,6 +135,19 @@ public sealed class AppHost : IToolHost
         // установщик мог включить автозапуск — принимаем его выбор при первом запуске
         if (S.FirstRun && Autostart.IsEnabled() && !S.Autostart) Core.Settings.Update(s => s.Autostart = true);
         _prev = Snapshot.Of(S);
+
+        // свои команды: Вера может их запускать, клавиши и расписание обновляются при изменениях
+        Core.Tools.RunCommand = (c, ct) => RunCommandAsync(c, null, "ai", ct);
+        Core.Commands.Changed += () => OnUi(RegisterHotkeys);
+        _commandTimer.Tick += (_, _) => RunDueCommands();
+        _commandTimer.Start();
+        var startup = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        startup.Tick += (_, _) =>
+        {
+            startup.Stop();
+            foreach (var (cmd, trig) in Core.Commands.StartupCommands().ToList()) _ = RunCommandAsync(cmd, trig.Id, "startup");
+        };
+        startup.Start();
 
         Voice.Send = (text, source) =>
         {
@@ -260,7 +274,11 @@ public sealed class AppHost : IToolHost
             (hk.ToggleChat, ToggleChat),
             (hk.Talk, TalkHotkey),
             (hk.Screenshot, AskAboutScreen),
-        });
+        }.Concat(Core.Commands.Hotkeys().Select(h =>
+        {
+            var (cmd, trig, keys) = h;
+            return ((string?)keys, (Action)(() => _ = RunCommandAsync(cmd, trig.Id, "hotkey")));
+        })));
         Chat.SettingsPanel.Refresh();
     }
 
@@ -335,6 +353,12 @@ public sealed class AppHost : IToolHost
     /// <summary>Отправить сообщение агенту (из чата, голосом или со скриншотом).</summary>
     public void Send(string text, IReadOnlyList<ImageData>? images, string source, IReadOnlyList<DocumentText>? documents = null)
     {
+        // своя команда по фразе («Вера, рабочий режим») — без ИИ и даже без ключа
+        if (images is not { Count: > 0 } && documents is not { Count: > 0 } && Core.Commands.MatchPhrase(text, S.Voice.WakePhrases) is { } match)
+        {
+            _ = RunCommandAsync(match.Cmd, match.Trigger.Id, source);
+            return;
+        }
         if (!Core.ProviderReady)
         {
             Pet.Say(Core.Line("noKey"), "angry", 8000, opensChat: true);
@@ -361,6 +385,73 @@ public sealed class AppHost : IToolHost
                 Log.Error("agent", e);
             }
         });
+    }
+
+    // ================================================================== свои команды
+
+    private readonly DispatcherTimer _commandTimer = new() { Interval = TimeSpan.FromSeconds(20) };
+    private int _commandsRunning;
+
+    private void RunDueCommands()
+    {
+        foreach (var (cmd, trig) in Core.Commands.DueSchedules(DateTimeOffset.Now)) _ = RunCommandAsync(cmd, trig.Id, "schedule");
+    }
+
+    /// <summary>Исполнитель с инструментами ПК и этим хостом (вопросы, реплики, «Спросить ИИ»).</summary>
+    public CommandRunner CreateCommandRunner() => new(Core.Tools.ExecuteAsync, Core.Reminders, this);
+
+    /// <summary>Запустить свою команду (source: "voice" | "chat" | "hotkey" | "schedule" | "startup" | "ai" | "manual"). Можно из любого потока.</summary>
+    public async Task<CommandRunResult> RunCommandAsync(UserCommand cmd, string? triggerId, string source, CancellationToken ct = default)
+    {
+        if (Interlocked.Increment(ref _commandsRunning) > 3)
+        {
+            Interlocked.Decrement(ref _commandsRunning);
+            return new CommandRunResult(false, L10n.T("Уже выполняется несколько команд — подожди немного."));
+        }
+        try
+        {
+            var says = cmd.Nodes.Any(n => n.Type == "say");
+            if (source is not "ai")
+                OnUi(() =>
+                {
+                    Pet.Say(L10n.F("🧩 «{0}»…", cmd.Name), "smug", 3000);
+                    if (Chat.IsVisible) Chat.Toast(L10n.F("🧩 Запускаю «{0}»", cmd.Name));
+                });
+            var res = await Task.Run(() => CreateCommandRunner().RunAsync(cmd, triggerId, ct), ct).ConfigureAwait(false);
+            OnUi(() =>
+            {
+                if (!res.Ok) Pet.Say(res.Message, "sad", 7000);
+                else if (!says && source is not "ai") Pet.Say(L10n.F("Готово: «{0}»", cmd.Name), "happy", 4000);
+                Chat.OnCommandFinished();
+            });
+            return res;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _commandsRunning);
+        }
+    }
+
+    Task<bool> ICommandHost.AskAsync(string question, CancellationToken ct) =>
+        _ui.InvokeAsync(() =>
+        {
+            Voice.Say(question);
+            return ConfirmDialog.Ask(Chat.IsVisible ? Chat : null, L10n.T("Вера спрашивает"), question, okText: L10n.T("Да"), cancelText: L10n.T("Нет"));
+        }).Task;
+
+    void ICommandHost.Say(string text) => OnUi(() =>
+    {
+        Pet.Say(text, "happy", 8000);
+        Voice.Say(text);
+        if (Chat.IsVisible) Chat.Toast(text);
+    });
+
+    async Task ICommandHost.AskAiAsync(string prompt, CancellationToken ct)
+    {
+        if (!Core.ProviderReady) throw new InvalidOperationException(L10n.T("нет ключа для ИИ — добавь его в настройках"));
+        if (Core.Agent.IsBusy) throw new InvalidOperationException(L10n.T("Вера сейчас отвечает на другое сообщение"));
+        OnUi(() => ShowChat("chat"));
+        await Core.Agent.SendAsync(prompt, null, "chat").ConfigureAwait(false);
     }
 
     private void OnAgentEvent(AgentEvent e)

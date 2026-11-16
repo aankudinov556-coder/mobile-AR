@@ -137,7 +137,7 @@ public sealed class ChatWindow : Window
         top.Children.Add(logo);
         foreach (var (id, text, icon) in new[]
                  {
-                     ("chat", "Чат", "chat"), ("reminders", "Напоминания", "bell"), ("memory", "Память", "star"),
+                     ("chat", "Чат", "chat"), ("reminders", "Напоминания", "bell"), ("commands", "Команды", "nodes"), ("memory", "Память", "star"),
                      ("phone", "Телефон", "phone"), ("settings", "Настройки", "gear"),
                  })
         {
@@ -173,10 +173,12 @@ public sealed class ChatWindow : Window
         RemindersPanel = new RemindersPanel(host, this);
         MemoryPanel = new MemoryPanel(host, this);
         SettingsPanel = new SettingsPanel(host, this);
+        CommandsPanel = new CommandsPanel(host, this);
         _panels["chat"] = ChatPanel;
         _panels["reminders"] = RemindersPanel;
         _panels["memory"] = MemoryPanel;
         _panels["settings"] = SettingsPanel;
+        _panels["commands"] = CommandsPanel;
         var content2 = new Grid();
         foreach (var p in _panels.Values)
         {
@@ -275,6 +277,7 @@ public sealed class ChatWindow : Window
     public RemindersPanel RemindersPanel { get; }
     public MemoryPanel MemoryPanel { get; }
     public SettingsPanel SettingsPanel { get; }
+    public CommandsPanel CommandsPanel { get; }
     public string CurrentTab => _current;
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -351,11 +354,16 @@ public sealed class ChatWindow : Window
         if (_topTabButtons.TryGetValue(top, out var tb) && tb.IsChecked != true) tb.IsChecked = true;
         foreach (var (id, p) in _panels) p.Visibility = id == panel ? Visibility.Visible : Visibility.Collapsed;
         if (panel != before) Anim.SlideIn(_panels[panel]);
+        if (before == "commands" && panel != "commands") CommandsPanel.Leave();
         switch (panel)
         {
             case "chat": ChatPanel.FocusInput(); break;
             case "reminders": RemindersPanel.Refresh(); break;
             case "memory": MemoryPanel.Refresh(); break;
+            case "commands":
+                // редактору схем нужно место — из узкого режима разворачиваемся
+                if (_compact) ToggleCompact();
+                break;
             case "settings":
                 SettingsPanel.Refresh();
                 if (tab == "phone") SettingsPanel.ShowSection("sync");
@@ -572,6 +580,13 @@ public sealed class ChatWindow : Window
     public void OnVoiceNothing()
     {
         if (_flow.Active) Run(_flow.OnNothingHeard(DateTimeOffset.Now));
+    }
+
+    /// <summary>Своя команда выполнилась (по фразе вместо ответа ИИ) — голосовой режим снова слушает.</summary>
+    public void OnCommandFinished()
+    {
+        if (_flow.Active && !_host.Core.Agent.IsBusy) _flow.OnTurnEnded(DateTimeOffset.Now);
+        if (CommandsPanel.Visibility == Visibility.Visible && !CommandsPanel.Editing) CommandsPanel.Refresh();
     }
 
     public void OnVoicePartial(string text)

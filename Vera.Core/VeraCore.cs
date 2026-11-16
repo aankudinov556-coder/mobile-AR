@@ -31,6 +31,8 @@ public sealed class VeraCore : IDisposable
         RequestLog = new RequestLog(storage);
         Agent = new VeraAgent(Settings, Providers, Tools, Memory, storage, platform) { Usage = Usage, Log = RequestLog };
         Sync = new Sync.SyncService(storage, secrets, Settings, Secrets, Reminders, Memory, Agent, platform);
+        Commands = new Commands.CommandService(storage);
+        Tools.Commands = Commands;
     }
 
     public string Platform { get; }
@@ -49,6 +51,8 @@ public sealed class VeraCore : IDisposable
     public RequestLog RequestLog { get; }
     /// <summary>Синхронизация с другими устройствами (ПК — сервер, телефон — клиент).</summary>
     public Sync.SyncService Sync { get; }
+    /// <summary>Свои команды из конструктора (ПК).</summary>
+    public Commands.CommandService Commands { get; }
 
     private string UserName => string.IsNullOrWhiteSpace(Settings.Current.UserName) ? L10n.T("семпай") : Settings.Current.UserName;
 
@@ -92,6 +96,7 @@ public sealed class VeraCore : IDisposable
         Agent.Flush();
         Usage.Flush();
         Sync.Flush();
+        Commands.Flush();
     }
 
     public void Dispose()

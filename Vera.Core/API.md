@@ -154,3 +154,12 @@ var wake = local.CreateWakeWord();                             // Vosk; null —
 - Старые установки без поля `language` остаются на русском, новые берут язык системы (`L10n.SystemDefault()`).
 - Тест `EveryExplicitKeyHasTranslation` падает, если в коде есть `L10n.T/F("…")` без перевода.
 - Новая строка интерфейса: оберни в `L10n.T` (или передай в `Ui.*`, они переводят сами) и добавь пару в `en.json`.
+
+## Свои команды (конструктор, ПК)
+
+- Модель: `UserCommand` (Nodes + Links), `CommandNode` (Type, X, Y, Props), `CommandLink` (From, Port, To). Хранение — `commands.json`, `Core.Commands` (`CommandService`), не синхронизируется.
+- Каталог блоков — `Blocks.All` (категория, иконка, свойства, выходы, подпись); `Blocks.Search(q)` для меню, `Blocks.Create(type, x, y)`.
+- Выполнение — `new CommandRunner(Core.Tools.ExecuteAsync, Core.Reminders, ICommandHost)`; события `StepStarted` / `StepFinished` для подсветки. Действия идут через те же инструменты, что у Веры в чате.
+- Платформа реализует `ICommandHost`: `AskAsync` (да/нет), `Say` (реплика), `AskAiAsync` (вопрос в чат).
+- Запуск: `MatchPhrase(text)` — только точное совпадение фразы; `DueSchedules(now)` — раз в день в окне 5 минут; `StartupCommands()`, `Hotkeys()`.
+- Вера: `Core.Tools.RunCommand` задаёт платформа — тогда у модели появляется инструмент `run_saved_command` со списком команд, где `AllowAi`.

@@ -129,6 +129,17 @@ public sealed partial class WindowsTools : IPlatformTools
                 if (!caps.Clipboard) return Disabled(name);
                 await _host.WriteClipboardAsync(args.Str("text") ?? "").ConfigureAwait(false);
                 return ToolResult.Ok("Текст скопирован в буфер обмена.", "📋 скопировано");
+            case "type_text":
+            {
+                // блок «Напечатать текст» конструктора: через буфер обмена и Ctrl+V — работает с любой раскладкой
+                if (!caps.PcControl) return Disabled(name);
+                var text = args.Str("text") ?? "";
+                if (text.Length == 0) return ToolResult.Ok("Пустой текст.", "⌨️ пусто");
+                await _host.WriteClipboardAsync(text).ConfigureAwait(false);
+                await Task.Delay(120, ct).ConfigureAwait(false);
+                PressCtrlV();
+                return ToolResult.Ok("Текст напечатан.", "⌨️ напечатано");
+            }
             case "take_screenshot":
             {
                 if (!caps.Screenshots) return Disabled(name);
@@ -146,6 +157,19 @@ public sealed partial class WindowsTools : IPlatformTools
     }
 
     // ================================================================== helpers
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+
+    private static void PressCtrlV()
+    {
+        const byte ctrl = 0x11, v = 0x56;
+        const uint up = 0x0002;
+        keybd_event(ctrl, 0, 0, UIntPtr.Zero);
+        keybd_event(v, 0, 0, UIntPtr.Zero);
+        keybd_event(v, 0, up, UIntPtr.Zero);
+        keybd_event(ctrl, 0, up, UIntPtr.Zero);
+    }
 
     private static void ShellOpen(string target, string? arguments = null)
     {

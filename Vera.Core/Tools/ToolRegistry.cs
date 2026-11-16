@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Vera.Core.Commands;
 
 namespace Vera.Core.Tools;
 
@@ -24,12 +25,39 @@ public sealed class ToolRegistry
         _settings = settings;
     }
 
+    /// <summary>Свои команды пользователя (ПК) — Вера может запускать разрешённые.</summary>
+    public CommandService? Commands { get; set; }
+
+    /// <summary>Запуск своей команды — задаёт платформа (ей нужны диалоги и реплики). null — инструмента нет.</summary>
+    public Func<UserCommand, CancellationToken, Task<CommandRunResult>>? RunCommand { get; set; }
+
     public IReadOnlyList<ToolDefinition> GetDefinitions(VeraSettings settings)
     {
         var defs = new List<ToolDefinition>(CoreDefinitions());
         if (settings.Search.Enabled) defs.AddRange(SearchDefinitions());
         if (_platform is not null) defs.AddRange(_platform.GetDefinitions(settings));
+        if (CommandsDefinition() is { } cmd) defs.Add(cmd);
         return defs;
+    }
+
+    /// <summary>run_saved_command со списком разрешённых команд (null — запускать нечего).</summary>
+    private ToolDefinition? CommandsDefinition()
+    {
+        if (Commands is null || RunCommand is null) return null;
+        var list = Commands.List().Where(c => c.Enabled && c.AllowAi).ToList();
+        if (list.Count == 0) return null;
+        var names = string.Join("; ", list.Select(c =>
+        {
+            var phrases = c.Phrases().ToList();
+            return "\"" + c.Name + "\"" + (phrases.Count > 0 ? " (phrases: " + string.Join(", ", phrases) + ")" : "");
+        }));
+        return new ToolDefinition
+        {
+            Name = "run_saved_command",
+            Description = "Run one of the user's own saved commands (made in Vera's command builder). " +
+                          "Use when the user asks for something that clearly matches one of them. Available: " + names,
+            Parameters = ToolDefinition.Schema(new JsonObject { ["name"] = ToolDefinition.Str("Command name exactly as listed.") }, "name"),
+        };
     }
 
     public static IEnumerable<ToolDefinition> SearchDefinitions()
@@ -126,6 +154,15 @@ public sealed class ToolRegistry
             if (args.ContainsKey("__invalid_json")) return ToolResult.Error("Ошибка: аргументы инструмента не являются корректным JSON", name);
             switch (name)
             {
+                case "run_saved_command" when Commands is not null && RunCommand is not null:
+                {
+                    var c = Commands.FindForAi(args.Str("name"));
+                    if (c is null) return ToolResult.Error($"Команда «{args.Str("name")}» не найдена или Вере её запускать нельзя.", "🧩 нет команды");
+                    var r = await RunCommand(c, ct).ConfigureAwait(false);
+                    return r.Ok
+                        ? ToolResult.Ok($"Команда «{c.Name}» выполнена: {r.Message}", $"🧩 {c.Name}")
+                        : ToolResult.Error($"Команда «{c.Name}» не выполнилась: {r.Message}", $"🧩 {c.Name}: ошибка");
+                }
                 case "create_reminder":
                 {
                     var due = ParseDue(args);

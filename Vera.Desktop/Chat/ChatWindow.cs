@@ -137,7 +137,7 @@ public sealed class ChatWindow : Window
         top.Children.Add(logo);
         foreach (var (id, text, icon) in new[]
                  {
-                     ("chat", "Чат", "chat"), ("reminders", "Напоминания", "bell"), ("commands", "Команды", "nodes"), ("memory", "Память", "star"),
+                     ("chat", "Чат", "chat"), ("reminders", "Напоминания", "bell"), ("commands", "Команды", "nodes"), ("projects", "Проекты", "code"), ("memory", "Память", "star"),
                      ("phone", "Телефон", "phone"), ("settings", "Настройки", "gear"),
                  })
         {
@@ -174,11 +174,13 @@ public sealed class ChatWindow : Window
         MemoryPanel = new MemoryPanel(host, this);
         SettingsPanel = new SettingsPanel(host, this);
         CommandsPanel = new CommandsPanel(host, this);
+        ProjectsPanel = new ProjectsPanel(host, this);
         _panels["chat"] = ChatPanel;
         _panels["reminders"] = RemindersPanel;
         _panels["memory"] = MemoryPanel;
         _panels["settings"] = SettingsPanel;
         _panels["commands"] = CommandsPanel;
+        _panels["projects"] = ProjectsPanel;
         var content2 = new Grid();
         foreach (var p in _panels.Values)
         {
@@ -278,6 +280,7 @@ public sealed class ChatWindow : Window
     public MemoryPanel MemoryPanel { get; }
     public SettingsPanel SettingsPanel { get; }
     public CommandsPanel CommandsPanel { get; }
+    public ProjectsPanel ProjectsPanel { get; }
     public string CurrentTab => _current;
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -360,6 +363,7 @@ public sealed class ChatWindow : Window
             case "chat": ChatPanel.FocusInput(); break;
             case "reminders": RemindersPanel.Refresh(); break;
             case "memory": MemoryPanel.Refresh(); break;
+            case "projects": ProjectsPanel.Refresh(); break;
             case "commands":
                 // редактору схем нужно место — из узкого режима разворачиваемся
                 if (_compact) ToggleCompact();

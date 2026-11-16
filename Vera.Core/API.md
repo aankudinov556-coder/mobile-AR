@@ -163,3 +163,12 @@ var wake = local.CreateWakeWord();                             // Vosk; null —
 - Платформа реализует `ICommandHost`: `AskAsync` (да/нет), `Say` (реплика), `AskAiAsync` (вопрос в чат).
 - Запуск: `MatchPhrase(text)` — только точное совпадение фразы; `DueSchedules(now)` — раз в день в окне 5 минут; `StartupCommands()`, `Hotkeys()`.
 - Вера: `Core.Tools.RunCommand` задаёт платформа — тогда у модели появляется инструмент `run_saved_command` со списком команд, где `AllowAi`.
+
+## Вайбкодинг (ПК)
+
+- `ProjectWorkspace(root)` — папка «Проекты Веры»: `Projects/Create/Files/Read/Write/Replace/Delete`, все пути через `Resolve` (никаких «..», дисков, `.vera`, ссылок наружу).
+- История: каждый `Write/Replace/Delete` — шаг в `.vera/journal.json` с копиями прежних версий; `Undo(project)` откатывает последний; `SnapshotAll` — снимок всего проекта перед работой агента (новые файлы откат удалит).
+- `CodingTools(workspace, ICodingHost, settings)` → `Core.Tools.Coding`: инструменты `code_projects / code_create_project / code_list_files / code_read_file / code_write_file / code_replace / code_run / code_open / code_undo`, `code_delegate` — если выбран агент и он найден. Событие `Activity(project, text)` — для журнала и пузыря.
+- Платформа реализует `ICodingHost`: `RunAsync` (команда в папке проекта после подтверждения), `Open`, `AgentProblem`, `RunAgentAsync`.
+- `ClaudeCodeAgent.Args(allowCommands)` — `claude -p --output-format stream-json --verbose --permission-mode acceptEdits [--allowedTools Bash]`, задача — через stdin; `Parse(line)` → шаг или итог.
+- С инструментами кода у агента до 40 шагов за ход (обычно 10) и подсказка в системном промпте.

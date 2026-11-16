@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Vera.Core.Coding;
 using Vera.Core.Commands;
 
 namespace Vera.Core.Tools;
@@ -25,6 +26,9 @@ public sealed class ToolRegistry
         _settings = settings;
     }
 
+    /// <summary>Вайбкодинг (ПК): инструменты code_* для папки «Проекты Веры». null — нет.</summary>
+    public CodingTools? Coding { get; set; }
+
     /// <summary>Свои команды пользователя (ПК) — Вера может запускать разрешённые.</summary>
     public CommandService? Commands { get; set; }
 
@@ -37,6 +41,7 @@ public sealed class ToolRegistry
         if (settings.Search.Enabled) defs.AddRange(SearchDefinitions());
         if (_platform is not null) defs.AddRange(_platform.GetDefinitions(settings));
         if (CommandsDefinition() is { } cmd) defs.Add(cmd);
+        if (Coding is not null) defs.AddRange(Coding.Definitions());
         return defs;
     }
 
@@ -154,6 +159,8 @@ public sealed class ToolRegistry
             if (args.ContainsKey("__invalid_json")) return ToolResult.Error("Ошибка: аргументы инструмента не являются корректным JSON", name);
             switch (name)
             {
+                case not null when Coding is not null && CodingTools.IsCodingTool(name):
+                    return await Coding.TryExecuteAsync(name, args, ct).ConfigureAwait(false) ?? ToolResult.Error("Неизвестный инструмент " + name);
                 case "run_saved_command" when Commands is not null && RunCommand is not null:
                 {
                     var c = Commands.FindForAi(args.Str("name"));

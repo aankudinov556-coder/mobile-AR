@@ -129,6 +129,13 @@ public static class Blocks
         new("ask_ai", BlockCategory.Vera, "Спросить ИИ", "sparkle",
             new[] { new BlockProp("prompt", "Что спросить у Веры (ответ — в чате)", PropKind.Multiline, "Какая сегодня погода?") },
             n => Short(n.Get("prompt")), Keywords: "нейросеть вопрос модель"),
+        new("code_task", BlockCategory.Vera, "Поручить код", "code",
+            new[]
+            {
+                new BlockProp("project", "Проект (папка в «Проектах Веры»)", PropKind.Text, "Мой проект"),
+                new BlockProp("task", "Что сделать", PropKind.Multiline, "Сделай страничку с таймером на 25 минут"),
+            },
+            n => n.Get("project") + ": " + Short(n.Get("task")), Keywords: "код программа вайбкодинг проект скрипт"),
         new("reminder", BlockCategory.Vera, "Поставить напоминание", "bell",
             new[]
             {

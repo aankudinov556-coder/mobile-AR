@@ -136,6 +136,10 @@ public sealed class AppHost : IToolHost, ICommandHost
         if (S.FirstRun && Autostart.IsEnabled() && !S.Autostart) Core.Settings.Update(s => s.Autostart = true);
         _prev = Snapshot.Of(S);
 
+        // вайбкодинг: инструменты code_* и экран «Проекты»
+        CodingHost = new CodingHost(() => S, (what, why) => ConfirmCommandAsync(what, why));
+        ApplyCoding();
+
         // свои команды: Вера может их запускать, клавиши и расписание обновляются при изменениях
         Core.Tools.RunCommand = (c, ct) => RunCommandAsync(c, null, "ai", ct);
         Core.Commands.Changed += () => OnUi(RegisterHotkeys);
@@ -246,6 +250,7 @@ public sealed class AppHost : IToolHost, ICommandHost
         var prev = _prev;
         _prev = now;
         if (now.Hotkeys != prev.Hotkeys) RegisterHotkeys();
+        ApplyCoding(); // сменилась папка проектов — новые инструменты
         if (now.Scale != prev.Scale || now.Topmost != prev.Topmost) Pet.ApplySettings();
         if (now.PetVisible != prev.PetVisible)
         {
@@ -385,6 +390,28 @@ public sealed class AppHost : IToolHost, ICommandHost
                 Log.Error("agent", e);
             }
         });
+    }
+
+    // ================================================================== вайбкодинг
+
+    public CodingHost? CodingHost { get; private set; }
+    private string? _codingFolder;
+
+    /// <summary>Создать (или пересоздать при смене папки) инструменты вайбкодинга.</summary>
+    private void ApplyCoding()
+    {
+        if (CodingHost is null) return;
+        var folder = CodingHost.FolderFor(S);
+        if (Core.Tools.Coding is not null && folder == _codingFolder) return;
+        _codingFolder = folder;
+        var tools = new Vera.Core.Coding.CodingTools(new Vera.Core.Coding.ProjectWorkspace(folder), CodingHost, () => S);
+        tools.Activity += (project, text) => OnUi(() =>
+        {
+            Chat.ProjectsPanel.OnActivity(project, text);
+            Pet.Say("💻 " + text, "think", 3500);
+        });
+        Core.Tools.Coding = tools;
+        OnUi(() => Chat.ProjectsPanel.Refresh());
     }
 
     // ================================================================== свои команды

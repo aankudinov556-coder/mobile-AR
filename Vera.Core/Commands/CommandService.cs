@@ -152,6 +152,9 @@ public sealed class CommandRunner
             case "ask_ai":
                 await _host.AskAiAsync(n.Get("prompt"), ct).ConfigureAwait(false);
                 return "out";
+            case "code_task":
+                await _host.AskAiAsync(L10n.F("В проекте «{0}» сделай: {1}", n.Get("project"), n.Get("task")), ct).ConfigureAwait(false);
+                return "out";
             case "reminder":
             {
                 var r = _reminders.Add(n.Get("text"), _now().AddMinutes(Math.Clamp(Dbl(n.Get("minutes"), 10), 0.1, 60 * 24 * 365)), "none", "command");

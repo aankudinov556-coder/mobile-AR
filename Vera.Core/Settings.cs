@@ -107,6 +107,8 @@ public sealed class VeraSettings
     public ReplySoundSettings Sound { get; set; } = new();
     /// <summary>Голосовой режим: экран для разговора (v2.5).</summary>
     public VoiceModeSettings VoiceMode { get; set; } = new();
+    /// <summary>Вайбкодинг: Вера пишет код в папке «Проекты Веры» (ПК).</summary>
+    public CodingSettings Coding { get; set; } = new();
     public VoiceSettings Voice { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
     public PetSettings Pet { get; set; } = new();
@@ -161,6 +163,19 @@ public sealed class ReplySoundSettings
     public string Style { get; set; } = "pixel";
     /// <summary>"low" | "mid" | "high"</summary>
     public string Volume { get; set; } = "mid";
+}
+
+public sealed class CodingSettings
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>Папка проектов; пусто — по умолчанию (Документы\Вера\Проекты).</summary>
+    public string Folder { get; set; } = "";
+    /// <summary>Кодинг-агент для больших задач: "none" | "claude" (Claude Code)</summary>
+    public string Agent { get; set; } = "none";
+    /// <summary>Как запускать агента (путь или команда в PATH).</summary>
+    public string AgentPath { get; set; } = "claude";
+    /// <summary>Разрешить агенту запускать команды в папке проекта (тесты, сборка). Без этого — только правка файлов.</summary>
+    public bool AgentCommands { get; set; }
 }
 
 public sealed class VoiceModeSettings

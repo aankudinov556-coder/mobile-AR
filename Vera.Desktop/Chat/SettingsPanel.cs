@@ -86,6 +86,7 @@ public sealed partial class SettingsPanel : Grid
         Add(root, CapabilitiesCard(), "caps");
         Add(root, RemindersCard(), "caps");
         Add(root, AppsCard(), "caps");
+        Add(root, CodingCard(), "caps");
         Add(root, KeysCard(), "keys");
         Add(root, HotkeysCard(), "system");
         Add(root, UsageCard(), "system");
@@ -672,6 +673,59 @@ public sealed partial class SettingsPanel : Grid
             list,
             Ui.Field("Громкость", vol),
             test);
+    }
+
+    // ================================================================== вайбкодинг
+
+    private Border CodingCard()
+    {
+        var folder = Text(s => string.IsNullOrWhiteSpace(s.Coding.Folder) ? Vera.Desktop.Platform.CodingHost.DefaultFolder() : s.Coding.Folder,
+            (s, v) => s.Coding.Folder = v.Trim() == Vera.Desktop.Platform.CodingHost.DefaultFolder() ? "" : v.Trim());
+        var pick = Ui.Button("Выбрать…", "Btn.Ghost", "folder", () =>
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L10n.T("Папка для проектов Веры") };
+            if (dlg.ShowDialog(_window) == true) Save(s => s.Coding.Folder = dlg.FolderName);
+        });
+        pick.VerticalAlignment = VerticalAlignment.Bottom;
+        pick.Margin = new Thickness(0, 0, 0, 8);
+        var agent = Combo(new[]
+        {
+            ("none", "Без агента — Вера пишет код сама"),
+            ("claude", "Claude Code (для больших задач)"),
+        }, s => s.Coding.Agent, (s, v) => s.Coding.Agent = v);
+        var agentPath = Text(s => s.Coding.AgentPath, (s, v) => s.Coding.AgentPath = string.IsNullOrWhiteSpace(v) ? "claude" : v.Trim(), placeholder: "claude");
+        var status = Ui.Muted("", 12);
+        var check = Ui.Button("Проверить агента", "Btn.Ghost", "check", async () =>
+        {
+            status.Text = L10n.T("Проверяю…");
+            try
+            {
+                var v = await _host.CodingHost!.AgentVersionAsync();
+                status.Text = "✓ " + v;
+                status.SetResourceReference(TextBlock.ForegroundProperty, "Ok");
+            }
+            catch (Exception e)
+            {
+                status.Text = "✗ " + e.Message;
+                status.SetResourceReference(TextBlock.ForegroundProperty, "Err");
+            }
+        });
+        check.HorizontalAlignment = HorizontalAlignment.Left;
+        var agentSub = Ui.Sub(
+            Ui.Field("Как запускать (путь к claude или команда)", agentPath),
+            Toggle("Агенту можно запускать команды в папке проекта (тесты, сборка)", s => s.Coding.AgentCommands, (s, v) => s.Coding.AgentCommands = v,
+                "(без этого он только правит файлы)"),
+            Ui.Muted("Claude Code ставишь и оплачиваешь сам (claude.ai/code). Перед каждой задачей Вера спросит разрешение; всю работу агента можно откатить одним шагом.", 12),
+            check, status);
+        ShowIf(agentSub, s => s.Coding.Agent == "claude");
+        return Ui.Card(
+            Ui.Title("💻 Вайбкодинг"),
+            Ui.Muted("Вера пишет код по просьбе: странички, скрипты, утилиты. Работает только в своей папке, каждый шаг можно откатить (раздел «Проекты»).", 12.5),
+            Toggle("Вера может писать код", s => s.Coding.Enabled, (s, v) => s.Coding.Enabled = v),
+            Ui.Row(new UIElement[] { Ui.Field("Папка проектов", folder), pick }, 8, 0),
+            Ui.Field("Кодинг-агент", agent),
+            agentSub,
+            Ui.Note("Запуск программ — только с твоего подтверждения. Для серьёзного кода нужна сильная облачная модель; встроенные справляются с простыми скриптами.", false));
     }
 
     // ================================================================== голосовой режим

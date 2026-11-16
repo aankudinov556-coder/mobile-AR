@@ -117,6 +117,7 @@ public sealed partial class TagFilter
 public sealed class VeraAgent
 {
     private const int MaxSteps = 10;
+    private const int MaxCodingSteps = 40;
     private const int MaxSaved = 300;
 
     private readonly SettingsService _settings;
@@ -401,7 +402,9 @@ public sealed class VeraAgent
                 Emit(new EmotionChanged(turnId, e));
             }
 
-            for (var step = 0; step < MaxSteps; step++)
+            // вайбкодинг — длинные цепочки «написала → запустила → исправила»
+            var maxSteps = toolNames.Contains("code_write_file") ? MaxCodingSteps : MaxSteps;
+            for (var step = 0; step < maxSteps; step++)
             {
                 var filter = new TagFilter(OnEmotion);
                 var stepText = new StringBuilder();
@@ -500,7 +503,7 @@ public sealed class VeraAgent
                 }
                 else provider.AppendToolResults(conv, results);
                 token.ThrowIfCancellationRequested();
-                if (step == MaxSteps - 1) Append(fullText, "(Слишком много шагов подряд — остановилась.)");
+                if (step == maxSteps - 1) Append(fullText, "(Слишком много шагов подряд — остановилась.)");
             }
 
             Emit(new TurnEnded(turnId, fullText.ToString(), emotion ?? "neutral", source));

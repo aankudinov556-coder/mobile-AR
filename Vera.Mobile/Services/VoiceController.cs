@@ -39,6 +39,8 @@ public sealed class VoiceController
     public event Action<float>? Level;
     /// <summary>Распознанная команда — отправить Вере (UI-поток).</summary>
     public event Action<string>? Heard;
+    /// <summary>Слова по ходу речи (распознавание Android), в UI-потоке.</summary>
+    public event Action<string>? PartialText;
     /// <summary>Сообщение для облачка: (текст, заголовок) (UI-поток).</summary>
     public event Action<string, string?>? Notice;
 
@@ -324,6 +326,7 @@ public sealed class VoiceController
         d.SpeechStarted += () => { if (_deviceCommand) SetState(RecorderState.Recording, null); };
         d.SpeechEnded += () => { if (_deviceCommand) SetState(RecorderState.Processing, null); };
         d.Result += OnDeviceResult;
+        d.Partial += t => { if (_deviceCommand) Post(() => PartialText?.Invoke(t)); };
         d.Failed += OnDeviceFailed;
         _device = d;
         return d;

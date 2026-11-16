@@ -1,4 +1,6 @@
+using System.Formats.Tar;
 using System.IO.Compression;
+using ICSharpCode.SharpZipLib.BZip2;
 
 namespace Vera.LocalAI;
 
@@ -14,6 +16,7 @@ public sealed record DownloadProgress(string AssetId, long Done, long Total, dou
 /// root/llm/*.gguf                       языковые модели (свои файлы тоже можно положить сюда)
 /// root/voice/vosk-small-ru/...          Vosk
 /// root/voice/ggml-*.bin                 Whisper
+/// root/voice/stream-ru/...              потоковое распознавание (sherpa-onnx)
 /// root/backends/runtimes/win-x64/native/vulkan/llama.dll   ускорители llama.cpp
 /// </code>
 /// </summary>
@@ -98,28 +101,55 @@ public sealed class ModelStore
         progress?.Report(new DownloadProgress(a.Id, before, before, 0, "extract"));
         var archive = Path.Combine(dir, a.Files[0].FileName);
         var outDir = a.Kind == AssetKind.Backend ? Path.Combine(Root, a.Folder!) : target;
-        await Task.Run(() => ExtractTo(archive, a.ExtractPrefix ?? "", outDir), ct).ConfigureAwait(false);
+        await Task.Run(() => ExtractTo(archive, a.ExtractPrefix ?? "", outDir, a.ExtractOnly), ct).ConfigureAwait(false);
         File.Delete(archive);
     }
 
-    /// <summary>Распаковать из zip только файлы под prefix (без него в путях) — защищено от «../» в архиве.</summary>
-    internal static void ExtractTo(string zipPath, string prefix, string outDir)
+    /// <summary>
+    /// Распаковать из zip/nupkg/tar.bz2 только файлы под prefix (без него в путях) — защищено от «../» в архиве.
+    /// only — оставить лишь файлы, чьё имя заканчивается на один из хвостов (null — все).
+    /// </summary>
+    internal static void ExtractTo(string archivePath, string prefix, string outDir, IReadOnlyList<string>? only = null)
     {
         var full = Path.GetFullPath(outDir);
         var tmp = full.TrimEnd(Path.DirectorySeparatorChar) + ".tmp";
         if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
         Directory.CreateDirectory(tmp);
-        using (var zip = ZipFile.OpenRead(zipPath))
+
+        string? Target(string entryName)
         {
+            var name = entryName.Replace('\\', '/');
+            if (name.StartsWith("./", StringComparison.Ordinal)) name = name[2..];
+            if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+            var rel = name[prefix.Length..];
+            if (rel.Length == 0 || rel.EndsWith('/')) return null;
+            if (only is not null && !only.Any(o => rel.EndsWith(o, StringComparison.OrdinalIgnoreCase))) return null;
+            var dest = Path.GetFullPath(Path.Combine(tmp, rel));
+            return dest.StartsWith(tmp + Path.DirectorySeparatorChar, StringComparison.Ordinal) ? dest : null;
+        }
+
+        if (archivePath.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase))
+        {
+            using var fs = File.OpenRead(archivePath);
+            using var bz = new BZip2InputStream(fs);
+            using var tar = new TarReader(bz);
+            while (tar.GetNextEntry() is { } e)
+            {
+                if (e.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile) || e.DataStream is null) continue;
+                var dest = Target(e.Name);
+                if (dest is null) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                using var outFile = File.Create(dest);
+                e.DataStream.CopyTo(outFile);
+            }
+        }
+        else
+        {
+            using var zip = ZipFile.OpenRead(archivePath);
             foreach (var e in zip.Entries)
             {
-                var name = e.FullName.Replace('\\', '/');
-                if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                var rel = name[prefix.Length..];
-                if (rel.Length == 0) continue;
-                var dest = Path.GetFullPath(Path.Combine(tmp, rel));
-                if (!dest.StartsWith(tmp + Path.DirectorySeparatorChar, StringComparison.Ordinal)) continue;
-                if (name.EndsWith('/')) { Directory.CreateDirectory(dest); continue; }
+                var dest = Target(e.FullName);
+                if (dest is null) continue;
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 e.ExtractToFile(dest, overwrite: true);
             }

@@ -98,6 +98,8 @@ public sealed class VeraSettings
     public string Persona { get; set; } = "boss";
     /// <summary>Номер миграции характера (v2.4: «дерзкая» по умолчанию заменена на «строгую начальницу»).</summary>
     public int PersonaRev { get; set; }
+    /// <summary>Номер миграции голоса (v2.5: пауза конца фразы короче — 1,1 с → 0,6–0,8 с).</summary>
+    public int VoiceRev { get; set; }
     public string CustomPrompt { get; set; } = "";
 
     public SttSettings Stt { get; set; } = new();
@@ -141,7 +143,7 @@ public sealed class VeraSettings
 
 public sealed class SttSettings
 {
-    /// <summary>"openai" | "groq" | "device" (средствами ОС) | "whisper" (локальный Whisper, ПК) — два последних делает платформа</summary>
+    /// <summary>"openai" | "groq" | "device" (средствами ОС) | "whisper" (локальный Whisper, ПК) | "stream" (потоковое на ПК, sherpa-onnx) — последние три делает платформа</summary>
     public string Provider { get; set; } = "openai";
     /// <summary>Модель локального Whisper: "base" | "small" | "medium"</summary>
     public string WhisperModel { get; set; } = "small";
@@ -165,7 +167,7 @@ public sealed class VoiceSettings
     public string WakePhrases { get; set; } = "вера, верочка, верунь";
     /// <summary>0..1, больше — чувствительнее</summary>
     public double Sensitivity { get; set; } = 0.5;
-    public int SilenceMs { get; set; } = 1100;
+    public int SilenceMs { get; set; } = 650;
     public string MicDeviceId { get; set; } = "";
     public bool Chime { get; set; } = true;
     /// <summary>Чем слушать слово-активатор: "stt" (каждая фраза — в распознавание) | "vosk" (локально, без интернета)</summary>
@@ -283,6 +285,13 @@ public sealed class SettingsService
         foreach (var p in new[] { "openrouter", "anthropic", "openai", "custom", "local" })
             if (!_file.Data.Models.ContainsKey(p)) _file.Data.Models[p] = VeraSettings.DefaultModel(p);
         // v2.4: характер по умолчанию заменён — переводим тех, у кого стоял прежний
+        // v2.5: прежняя пауза 1,1 с делала ответ заметно медленнее — укорачиваем, если её не меняли
+        if (_file.Data.VoiceRev < 1)
+        {
+            if (existed && _file.Data.Voice.SilenceMs == 1100) _file.Data.Voice.SilenceMs = _file.Data.Voice.Vad == "silero" ? 600 : 800;
+            _file.Data.VoiceRev = 1;
+            if (existed) _file.Save();
+        }
         if (_file.Data.PersonaRev < 1)
         {
             if (_file.Data.Persona == "tease") _file.Data.Persona = Personas.Default;
@@ -365,11 +374,12 @@ public static class SettingsPresets
     public static readonly IReadOnlyList<Preset> All = new[]
     {
         new Preset("offline", "🌙 Бесплатно и офлайн",
-            "Всё на этом ПК: встроенная модель, Whisper, имя слушает Vosk. Без ключей и интернета (кроме поиска). Нужно скачать модели.",
+            "Всё на этом ПК: встроенная модель, быстрое распознавание речи, имя слушает Vosk. Без ключей и интернета (кроме поиска). Нужно скачать модели.",
             s =>
             {
                 s.Provider = "local";
-                s.Stt.Provider = "whisper";
+                s.Stt.Provider = "stream";
+                s.Voice.SilenceMs = 600;
                 s.Voice.WakeEngine = "vosk";
                 s.Voice.Vad = "silero";
                 s.Search.Engine = "auto";

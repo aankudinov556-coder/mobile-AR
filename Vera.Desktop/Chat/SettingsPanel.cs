@@ -679,9 +679,10 @@ public sealed partial class SettingsPanel : Grid
     {
         var provider = Combo(new[]
             {
+                ("stream", "На этом ПК, быстро — слова видны, пока говоришь (рекомендую)"),
                 ("openai", "OpenAI (ключ OpenAI)"),
                 ("groq", "Groq Whisper (быстро и дёшево)"),
-                ("whisper", "Whisper на этом ПК (офлайн, бесплатно)"),
+                ("whisper", "Whisper на этом ПК (офлайн, точнее, но медленнее)"),
             },
             s => s.Stt.Provider, (s, v) => s.Stt.Provider = v);
         var lang = Combo(new[] { ("ru", "русский"), ("en", "английский"), ("uk", "украинский"), ("", "авто") },
@@ -694,7 +695,12 @@ public sealed partial class SettingsPanel : Grid
         ShowIf(gField, s => s.Stt.Provider == "groq");
         var whisperSub = Ui.Sub(Ui.Muted("Модель распознавания работает на процессоре. small — лучший баланс для русского."), WhisperRows());
         ShowIf(whisperSub, s => s.Stt.Provider == "whisper");
-        var models = new StackPanel { Children = { new Grid { Children = { oField, gField } }, whisperSub } };
+        var streamSub = Ui.Sub(
+            Ui.Muted("Текст готов почти сразу после паузы — без интернета и ключей. Нужна модель для языка распознавания.", 12),
+            DownloadRow(ModelCatalog.StreamFor("ru")!, onInstalled: () => Local?.WarmUpStreaming(), badge: "⭐ русский"),
+            DownloadRow(ModelCatalog.StreamFor("en")!, onInstalled: () => Local?.WarmUpStreaming(), badge: "English"));
+        ShowIf(streamSub, s => s.Stt.Provider == "stream");
+        var models = new StackPanel { Children = { new Grid { Children = { oField, gField } }, whisperSub, streamSub } };
 
         _mic = new ComboBox();
         FillMics();

@@ -394,6 +394,7 @@ public sealed class ChatPage : ContentPage
         _voice.StateChanged += OnVoiceState;
         _voice.Level += l => _micLevel = l;
         _voice.Heard += text => Send(text, "voice");
+        _voice.PartialText += text => ShowBubble(text, L10n.T("🎙️ слушаю"), sticky: true, kind: "voice");
         _voice.Notice += (text, head) => { _vera.SetEmotion("sad", 5000); ShowBubble(text, head, ms: 8000); };
 
         LoadHistory();

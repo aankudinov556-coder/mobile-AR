@@ -24,6 +24,36 @@ public static class WavEncoder
         return buf;
     }
 
+    /// <summary>WAV (16-битный PCM, первый канал) → отсчёты −1..1 и частота. Другие форматы — исключение.</summary>
+    public static (float[] Samples, int SampleRate) Decode(byte[] wav)
+    {
+        if (wav.Length < 44 || wav[0] != 'R' || wav[1] != 'I' || wav[2] != 'F' || wav[3] != 'F') throw new FormatException("Это не WAV");
+        int rate = 16000, channels = 1, bits = 16, pos = 12;
+        while (pos + 8 <= wav.Length)
+        {
+            var id = System.Text.Encoding.ASCII.GetString(wav, pos, 4);
+            var len = BitConverter.ToInt32(wav, pos + 4);
+            var body = pos + 8;
+            if (id == "fmt ")
+            {
+                channels = BitConverter.ToInt16(wav, body + 2);
+                rate = BitConverter.ToInt32(wav, body + 4);
+                bits = BitConverter.ToInt16(wav, body + 14);
+            }
+            else if (id == "data")
+            {
+                if (bits != 16) throw new FormatException("Нужен 16-битный WAV");
+                len = Math.Min(len, wav.Length - body);
+                var n = len / 2 / Math.Max(1, channels);
+                var f = new float[n];
+                for (var i = 0; i < n; i++) f[i] = BitConverter.ToInt16(wav, body + i * 2 * channels) / 32768f;
+                return (f, rate);
+            }
+            pos = body + len + (len & 1);
+        }
+        throw new FormatException("В WAV нет данных");
+    }
+
     public static float[] Downsample(ReadOnlySpan<float> src, int from, int to)
     {
         if (from == to) return src.ToArray();

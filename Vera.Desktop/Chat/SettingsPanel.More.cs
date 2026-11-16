@@ -328,7 +328,7 @@ public sealed partial class SettingsPanel
         var list = new List<string>();
         if (Local is not { } l) return new List<string> { "модуль локального ИИ не загрузился (см. error.log)" };
         if (l.Llm.ResolveModelPath(S.CurrentModel) is null) list.Add("языковую модель");
-        if (l.WhisperModelPath() is null) list.Add("Whisper");
+        if (!l.StreamReady()) list.Add("модель быстрого распознавания");
         if (!l.Store.IsInstalled("vosk-small-ru")) list.Add("Vosk");
         return list;
     }

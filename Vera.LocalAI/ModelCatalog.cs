@@ -1,11 +1,12 @@
 namespace Vera.LocalAI;
 
 /// <summary>Что за файл: языковая модель, модель распознавания, ускоритель.</summary>
-public enum AssetKind { Llm, Vosk, Whisper, Backend }
+public enum AssetKind { Llm, Vosk, Whisper, Stream, Backend }
 
 /// <summary>
 /// Скачиваемый файл. <see cref="Files"/> — несколько частей (например, модель + словарь).
-/// <see cref="Extract"/>: zip/nupkg распаковывается в папку <see cref="Folder"/> (берутся файлы из <see cref="ExtractPrefix"/>).
+/// <see cref="Extract"/>: zip/nupkg/tar.bz2 распаковывается в папку <see cref="Folder"/> (берутся файлы из <see cref="ExtractPrefix"/>;
+/// если задан <see cref="ExtractOnly"/> — только файлы, чьё имя заканчивается на один из этих хвостов).
 /// </summary>
 public sealed record AssetInfo(
     string Id,
@@ -16,7 +17,8 @@ public sealed record AssetInfo(
     IReadOnlyList<AssetFile> Files,
     bool Extract = false,
     string? ExtractPrefix = null,
-    string? Folder = null)
+    string? Folder = null,
+    IReadOnlyList<string>? ExtractOnly = null)
 {
     /// <summary>Для LLM: минимум оперативной памяти, ГБ.</summary>
     public int MinRamGB { get; init; }
@@ -35,6 +37,7 @@ public sealed record AssetFile(string Url, string FileName);
 public static class ModelCatalog
 {
     private const string Hf = "https://huggingface.co/";
+    private const string Gh = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/";
 
     public static readonly IReadOnlyList<AssetInfo> Llms = new[]
     {
@@ -67,6 +70,18 @@ public static class ModelCatalog
             new[] { new AssetFile("https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip", "vosk-model-small-ru-0.22.zip") },
             Extract: true, ExtractPrefix: "vosk-model-small-ru-0.22/", Folder: "vosk-small-ru"),
 
+        // потоковое распознавание (sherpa-onnx): слова видны, пока говоришь, итог — через ~30 мс после паузы
+        new AssetInfo("stream-ru", AssetKind.Stream, "T-one — быстрое распознавание русского",
+            "Потоковое: слова видны, пока говоришь, текст готов сразу после паузы. Работает на процессоре.", 123,
+            new[] { new AssetFile(Gh + "sherpa-onnx-streaming-t-one-russian-2025-09-08.tar.bz2", "stream-ru.tar.bz2") },
+            Extract: true, ExtractPrefix: "sherpa-onnx-streaming-t-one-russian-2025-09-08/", Folder: "stream-ru",
+            ExtractOnly: new[] { "model.onnx", "tokens.txt", "LICENSE" }),
+        new AssetInfo("stream-en", AssetKind.Stream, "Zipformer — быстрое распознавание английского",
+            "Потоковое распознавание английской речи. Архив большой, на диске останется ~75 МБ.", 296,
+            new[] { new AssetFile(Gh + "sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2", "stream-en.tar.bz2") },
+            Extract: true, ExtractPrefix: "sherpa-onnx-streaming-zipformer-en-2023-06-26/", Folder: "stream-en",
+            ExtractOnly: new[] { ".int8.onnx", "tokens.txt" }),
+
         new AssetInfo("whisper-base", AssetKind.Whisper, "Whisper base",
             "Быстро, но ошибается в словах. Для слабых ПК.", 148,
             new[] { new AssetFile(Hf + "ggerganov/whisper.cpp/resolve/main/ggml-base.bin", "ggml-base.bin") }),
@@ -98,6 +113,9 @@ public static class ModelCatalog
     public static IEnumerable<AssetInfo> All => Llms.Concat(Voice).Concat(Backends);
 
     public static AssetInfo? Get(string id) => All.FirstOrDefault(a => a.Id == id);
+
+    /// <summary>Модель потокового распознавания для языка ("ru" | "en"; иначе — русская).</summary>
+    public static AssetInfo? StreamFor(string? language) => Get(language == "en" ? "stream-en" : "stream-ru");
 
     public static AssetInfo? WhisperFor(string size) => Get("whisper-" + (string.IsNullOrWhiteSpace(size) ? "small" : size));
 }

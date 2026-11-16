@@ -77,6 +77,8 @@ public sealed class DeviceRecognizer : Java.Lang.Object, IRecognitionListener
     private bool _active;
 
     public event Action<string>? Result;
+    /// <summary>Промежуточный текст, пока человек говорит.</summary>
+    public event Action<string>? Partial;
     /// <summary>Ошибка: "short" / "timeout" (ничего не услышала) или текст ошибки.</summary>
     public event Action<string>? Failed;
     public event Action? SpeechStarted;
@@ -103,7 +105,7 @@ public sealed class DeviceRecognizer : Java.Lang.Object, IRecognitionListener
         intent.PutExtra(RecognizerIntent.ExtraLanguage, lang);
         intent.PutExtra(RecognizerIntent.ExtraLanguagePreference, lang);
         intent.PutExtra(RecognizerIntent.ExtraMaxResults, 1);
-        intent.PutExtra(RecognizerIntent.ExtraPartialResults, false);
+        intent.PutExtra(RecognizerIntent.ExtraPartialResults, true);
         intent.PutExtra(RecognizerIntent.ExtraCallingPackage, ctx.PackageName);
         _active = true;
         _sr.StartListening(intent);
@@ -151,7 +153,12 @@ public sealed class DeviceRecognizer : Java.Lang.Object, IRecognitionListener
     }
 
     public void OnEvent(int eventType, Bundle? @params) { }
-    public void OnPartialResults(Bundle? partialResults) { }
+    public void OnPartialResults(Bundle? partialResults)
+    {
+        var list = partialResults?.GetStringArrayList(SpeechRecognizer.ResultsRecognition);
+        var text = list is { Count: > 0 } ? list[0] : null;
+        if (!string.IsNullOrWhiteSpace(text)) Partial?.Invoke(text.Trim());
+    }
     public void OnReadyForSpeech(Bundle? @params) { }
 
     public void OnResults(Bundle? results)

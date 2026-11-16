@@ -28,6 +28,8 @@ public sealed partial class VoiceController : IDisposable
     private bool _voskProblemShown;
 
     private string? _replyTurn;
+    private StreamingSpeech.Session? _live;
+    private readonly object _liveLock = new();
     private bool _wakeBusy;
 
     public VoiceController(VeraCore core, Dispatcher ui, LocalAiService? local = null)
@@ -43,10 +45,19 @@ public sealed partial class VoiceController : IDisposable
         _mic.Frame += f =>
         {
             bool paused;
+            bool command;
             lock (_recLock)
             {
                 _rec.Feed(f, Microphone.SampleRate);
                 paused = _rec.Paused || _rec.Mode == ListenMode.Command;
+                command = _rec.Mode == ListenMode.Command;
+            }
+            // быстрое распознавание: слова распознаются по ходу речи
+            StreamingSpeech.Session? live;
+            lock (_liveLock) live = _live;
+            if (command && live is not null)
+            {
+                try { live.Feed(f, Microphone.SampleRate); } catch (Exception) { /* кадр пропущен */ }
             }
             // офлайн-слушатель имени: пока Вера говорит или уже записывает команду — не слушаем
             var vosk = _vosk;
@@ -58,6 +69,7 @@ public sealed partial class VoiceController : IDisposable
         _mic.Failed += msg => _ui.BeginInvoke(() =>
         {
             lock (_recLock) _rec.Cancel("cancel");
+            StopLive();
             _mic.Stop();
             Problem?.Invoke("микрофон", "Микрофон отключился: " + msg);
         });
@@ -126,8 +138,35 @@ public sealed partial class VoiceController : IDisposable
             Problem?.Invoke("микрофон", "Нет доступа к микрофону: " + e.Message);
             return;
         }
+        StartLive();
         lock (_recLock) _rec.StartCommand();
     }
+
+    /// <summary>Текст, распознанный по ходу речи (в потоке UI) — для пузыря и голосового режима.</summary>
+    public event Action<string>? PartialText;
+
+    private void StartLive()
+    {
+        StopLive();
+        if (S.Stt.Provider != "stream") return;
+        var rec = _local?.StreamingIfLoaded();
+        if (rec is null) return; // ещё грузится — эту фразу распознаем целиком после паузы
+        var session = rec.Start();
+        session.PartialChanged += t => _ui.BeginInvoke(() => PartialText?.Invoke(t));
+        lock (_liveLock) _live = session;
+    }
+
+    private StreamingSpeech.Session? TakeLive()
+    {
+        lock (_liveLock)
+        {
+            var s = _live;
+            _live = null;
+            return s;
+        }
+    }
+
+    private void StopLive() => TakeLive()?.Dispose();
 
     /// <summary>Горячая клавиша «говорить»: начать, закончить досрочно или перебить речь.</summary>
     public void ListenToggle()
@@ -143,6 +182,7 @@ public sealed partial class VoiceController : IDisposable
     /// <summary>Включить/выключить постоянное прослушивание по настройке voice.wakeWord, сменить микрофон.</summary>
     public void SyncSettings()
     {
+        _local?.WarmUpStreaming();
         var want = S.Voice.WakeWord;
         // нейросетевой детектор речи вместо порога громкости
         lock (_recLock) _rec.SpeechProbability = S.Voice.Vad == "silero" ? _local?.VadHook() : null;
@@ -245,6 +285,7 @@ public sealed partial class VoiceController : IDisposable
 
     private void BackToIdle()
     {
+        StopLive();
         State = _rec.WakeEnabled || _voskListening ? RecorderState.Wake : RecorderState.Off;
         StopMicIfIdle();
         StateChanged?.Invoke(State, null);
@@ -261,7 +302,14 @@ public sealed partial class VoiceController : IDisposable
         }
         try
         {
-            var text = await Task.Run(() => _core.Speech.TranscribeAsync(wav, "audio/wav"));
+            var live = TakeLive();
+            string text;
+            if (live is not null)
+            {
+                // слова уже распознаны по ходу речи — осталось только завершить фразу (~30 мс)
+                text = await Task.Run(() => { using (live) return live.Finish(); });
+            }
+            else text = await Task.Run(() => _core.Speech.TranscribeAsync(wav, "audio/wav"));
             BackToIdle();
             if (Punct().Replace(text ?? "", "").Length < 2)
             {
@@ -342,6 +390,7 @@ public sealed partial class VoiceController : IDisposable
     public void Dispose()
     {
         Speaker.Dispose();
+        StopLive();
         _voskListening = false;
         _mic.Dispose();
         _vosk?.Dispose();

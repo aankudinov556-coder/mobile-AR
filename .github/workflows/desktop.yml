@@ -82,6 +82,7 @@ jobs:
             'out/Vera/runtimes/win-x64/whisper.dll',
             'out/Vera/libvosk.dll',
             'out/Vera/onnxruntime.dll',
+            'out/Vera/sherpa-onnx-c-api.dll',
             'out/Vera/assets/models/silero_vad.onnx'
           )
           $missing = $need | Where-Object { -not (Test-Path $_) }

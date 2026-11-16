@@ -262,6 +262,29 @@ public class SpeechTests
     }
 
     [Fact]
+    public void WavRoundTrip()
+    {
+        var src = Enumerable.Range(0, 800).Select(i => (float)Math.Sin(i / 10.0) * 0.5f).ToArray();
+        var (back, rate) = WavEncoder.Decode(WavEncoder.Encode(src, 16000));
+        Assert.Equal(16000, rate);
+        Assert.Equal(src.Length, back.Length);
+        Assert.All(src.Zip(back), p => Assert.InRange(p.First - p.Second, -0.001f, 0.001f));
+        Assert.Throws<FormatException>(() => WavEncoder.Decode(new byte[50]));
+    }
+
+    [Fact]
+    public void OldDefaultPauseIsShortened()
+    {
+        var old = new MemStorage();
+        old.WriteText("settings.json", "{\"voice\":{\"silenceMs\":1100,\"vad\":\"silero\"}}");
+        Assert.Equal(600, new SettingsService(old).Current.Voice.SilenceMs);
+        var custom = new MemStorage();
+        custom.WriteText("settings.json", "{\"voice\":{\"silenceMs\":1500}}");
+        Assert.Equal(1500, new SettingsService(custom).Current.Voice.SilenceMs);
+        Assert.Equal(650, new SettingsService(new MemStorage()).Current.Voice.SilenceMs);
+    }
+
+    [Fact]
     public void WavHeader()
     {
         var wav = WavEncoder.Encode(new float[1600], 16000);

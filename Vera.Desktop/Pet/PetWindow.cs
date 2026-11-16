@@ -320,6 +320,11 @@ public sealed partial class PetWindow : Window
         var voice = _host.Voice;
         voice.StateChanged += OnVoiceState;
         voice.MicLevel += OnMicLevel;
+        voice.PartialText += t =>
+        {
+            // быстрое распознавание: показываем слова по ходу речи
+            if (t.Length > 0 && _mode is PetMode.Listening or PetMode.Recording) ShowText(t, head: "🎙️ слушаю", sticky: true);
+        };
         voice.Problem += (head, text) =>
         {
             _mode = PetMode.Idle;

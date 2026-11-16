@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- Общая версия ПК- и Android-приложения -->
-    <Version>2.4.1</Version>
+    <Version>2.5.0</Version>
     <Authors>Vera Assistant</Authors>
     <Product>Вера</Product>
     <LangVersion>latest</LangVersion>

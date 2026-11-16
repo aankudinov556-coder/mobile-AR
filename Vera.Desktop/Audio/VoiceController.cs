@@ -12,7 +12,7 @@ namespace Vera.Desktop.Audio;
 
 /// <summary>
 /// Голос Веры: микрофон → VoiceRecorder (рация и активация по слову) → распознавание → агент;
-/// ответы агента → SentenceChunker → синтез → Speaker. Все события — в потоке UI.
+/// ответы агента → «голосок» Веры (Speaker, короткие тоны в такт печати). Все события — в потоке UI.
 /// </summary>
 public sealed partial class VoiceController : IDisposable
 {
@@ -27,18 +27,15 @@ public sealed partial class VoiceController : IDisposable
     private volatile bool _voskListening;
     private bool _voskProblemShown;
 
-    private SentenceChunker? _chunker;
-    private string? _chunkTurn;
-    private int _lastStep = -1;
+    private string? _replyTurn;
     private bool _wakeBusy;
-    private bool _ttsErrorShown;
 
     public VoiceController(VeraCore core, Dispatcher ui, LocalAiService? local = null)
     {
         _core = core;
         _ui = ui;
         _local = local;
-        Speaker = new Speaker(core);
+        Speaker = new Speaker(core, ui);
         _rec = new VoiceRecorder(() => _core.Settings.Current.Voice.Sensitivity, () => _core.Settings.Current.Voice.SilenceMs);
         _rec.StateChanged += (st, reason) => _ui.BeginInvoke(() => OnState(st, reason));
         _rec.Level += lvl => _ui.BeginInvoke(() => MicLevel?.Invoke(lvl));
@@ -81,12 +78,6 @@ public sealed partial class VoiceController : IDisposable
         {
             _resumeTimer.Start();
             SpeakingChanged?.Invoke(false);
-        };
-        Speaker.Error += msg =>
-        {
-            if (_ttsErrorShown) return;
-            _ttsErrorShown = true;
-            Problem?.Invoke("голос", msg);
         };
     }
 
@@ -317,65 +308,40 @@ public sealed partial class VoiceController : IDisposable
         }
     }
 
-    // ================================================================== speech
+    // ================================================================== reply sound
 
-    public bool ShouldSpeak(string source)
-    {
-        var t = S.Tts;
-        if (t.Engine == "off") return false;
-        if (t.AutoSpeak == "always") return true;
-        if (t.AutoSpeak == "never") return false;
-        return source is "voice" or "screen";
-    }
-
-    /// <summary>Сказать фразу (напоминание, тест голоса).</summary>
-    public void Say(string text, bool resetErrors = false)
-    {
-        if (resetErrors) _ttsErrorShown = false;
-        if (S.Tts.Engine == "off") return;
-        Speaker.Stop();
-        Speaker.Enqueue(text);
-    }
+    /// <summary>Сказать фразу «голоском» (напоминание, тест в настройках).</summary>
+    public void Say(string text) => Speaker.Say(text);
 
     public void StopSpeaking() => Speaker.Stop();
 
-    /// <summary>События агента (уже в потоке UI): озвучка ответа по предложениям.</summary>
+    /// <summary>События агента (уже в потоке UI): «голосок» в такт тексту ответа.</summary>
     public void OnAgentEvent(AgentEvent e)
     {
         switch (e)
         {
             case TurnStarted ts:
                 Speaker.Stop();
-                _chunker = null;
-                _chunkTurn = null;
-                _lastStep = -1;
-                if (ShouldSpeak(ts.Source))
-                {
-                    _chunkTurn = ts.TurnId;
-                    _chunker = new SentenceChunker(c => Speaker.Enqueue(c));
-                }
+                Speaker.Begin();
+                _replyTurn = ts.TurnId;
                 break;
-            case TextDelta d when d.TurnId == _chunkTurn && _chunker is not null:
-                // новый шаг модели — новый абзац, не склеиваем предложения
-                if (_lastStep >= 0 && d.Step != _lastStep) _chunker.Push("\n");
-                _lastStep = d.Step;
-                _chunker.Push(d.Delta);
+            case TextDelta d when d.TurnId == _replyTurn:
+                Speaker.Push(d.Delta);
                 break;
-            case TurnEnded te when te.TurnId == _chunkTurn:
-                _chunker?.End();
-                _chunker = null;
-                _chunkTurn = null;
+            case TurnEnded te when te.TurnId == _replyTurn:
+                Speaker.End();
+                _replyTurn = null;
                 break;
-            case TurnFailed tf when tf.TurnId == _chunkTurn:
-                _chunker = null;
-                _chunkTurn = null;
+            case TurnFailed tf when tf.TurnId == _replyTurn:
+                Speaker.Stop();
+                _replyTurn = null;
                 break;
         }
     }
 
     public void Dispose()
     {
-        Speaker.Stop();
+        Speaker.Dispose();
         _voskListening = false;
         _mic.Dispose();
         _vosk?.Dispose();

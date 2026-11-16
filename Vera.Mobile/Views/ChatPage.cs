@@ -26,7 +26,6 @@ public sealed class ChatPage : ContentPage
         public int? LastStep { get; set; }
         /// <summary>Где в тексте начинается каждый шаг модели (для TextReplaced).</summary>
         public Dictionary<int, int> StepStart { get; } = new();
-        public SentenceChunker? Chunker { get; set; }
         public bool Speak { get; set; }
         public string Source { get; init; } = "chat";
     }
@@ -391,7 +390,6 @@ public sealed class ChatPage : ContentPage
             else if (_vera.Mode == PetMode.Talking && !_busy) _vera.Mode = PetMode.Idle;
             UpdateSendIcon();
         });
-        _speech.Error += msg => MainThread.BeginInvokeOnMainThread(() => ShowBubble(msg, L10n.T("🔊 голос"), ms: 8000));
 
         _voice.StateChanged += OnVoiceState;
         _voice.Level += l => _micLevel = l;
@@ -827,7 +825,6 @@ public sealed class ChatPage : ContentPage
             UpdateDocs();
         }
         else _pendingPreview = null;
-        _speech.ResetErrors();
         _stickToBottom = true;
         _ = Task.Run(async () =>
         {
@@ -983,17 +980,8 @@ public sealed class ChatPage : ContentPage
 
     // ================================================================== события агента
 
-    private bool ShouldSpeak(string source)
-    {
-        var t = Core.Settings.Current.Tts;
-        if (t.Engine == "off") return false;
-        return t.AutoSpeak switch
-        {
-            "always" => true,
-            "never" => false,
-            _ => source == "voice",
-        };
-    }
+    /// <summary>Звучит ли «голосок» в ответе (иначе рот просто шевелится в такт тексту).</summary>
+    private bool ShouldSpeak() => Core.Settings.Current.Sound.Style != "off";
 
     private void OnAgentEvent(AgentEvent e)
     {
@@ -1018,9 +1006,9 @@ public sealed class ChatPage : ContentPage
                 var v = new MessageView(false, DateTimeOffset.Now);
                 v.SetVera("", Array.Empty<ChipState>(), typing: true);
                 _list.Children.Add(v);
-                var speak = ShouldSpeak(ts.Source);
+                var speak = ShouldSpeak();
                 var turn = new LiveTurn { View = v, Speak = speak, Source = ts.Source };
-                if (speak) turn.Chunker = new SentenceChunker(c => _speech.Enqueue(c));
+                _speech.Begin();
                 _live[ts.TurnId] = turn;
                 _vera.Mode = PetMode.Thinking;
                 UpdateEmpty();
@@ -1046,7 +1034,7 @@ public sealed class ChatPage : ContentPage
                 t.Text.Append(d.Delta);
                 if (_vera.Mode == PetMode.Thinking) _vera.Mode = PetMode.Talking;
                 if (!t.Speak) _vera.Flap();
-                t.Chunker?.Push(d.Delta);
+                if (t.Speak) _speech.Push(d.Delta);
                 MarkDirty(d.TurnId);
                 break;
             }
@@ -1080,7 +1068,7 @@ public sealed class ChatPage : ContentPage
             {
                 if (_live.Remove(te.TurnId, out var t))
                 {
-                    t.Chunker?.End();
+                    _speech.End();
                     if (t.Text.Length == 0 && te.Text.Length > 0) t.Text.Append(te.Text);
                     var text = t.Text.ToString();
                     t.View.SetVera(text.Length > 0 || t.Tools.Count > 0 ? text : "…", t.Tools, false);
@@ -1110,7 +1098,7 @@ public sealed class ChatPage : ContentPage
                     }
                     else
                     {
-                        t.Chunker = null;
+                        _speech.Stop();
                         t.View.SetVera((text.Length > 0 ? text + "\n\n" : "") + "⚠️ " + tf.Message, t.Tools, false, error: true);
                     }
                 }
@@ -1256,11 +1244,11 @@ public sealed class ChatPage : ContentPage
         Fx("!", Ui.Warn, 46, -2);
         _vera.Hop();
         ShowReminderBubble(r, missed ? L10n.T("⏰ пропущенное") : L10n.T("⏰ напоминание"), phrase);
-        if (s.Reminders.Speak && s.Tts.Engine != "off")
+        if (s.Reminders.Speak && s.Sound.Style != "off")
         {
             _speech.Stop();
             var delay = s.Reminders.Sound ? 900 : 0;
-            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(delay), () => _speech.Enqueue(phrase));
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(delay), () => _speech.Say(phrase));
         }
     }
 

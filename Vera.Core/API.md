@@ -49,8 +49,9 @@ TurnFailed(TurnId, Message, Aborted, PartialText, Source)
 ```
 Когда `Step` меняется — это новый абзац (между шагами модели были вызовы инструментов).
 
-Озвучка: если `Source == "voice"` и `tts.autoSpeak == "voice"` (или `"always"`), кормите `TextDelta` в
-`new SentenceChunker(chunk => queue(chunk))`, в конце хода `End()`; каждый кусок → `Speech.SynthesizeAsync` → проиграть.
+Звук ответа (v2.5, вместо синтеза речи): на `TurnStarted` — `pacer.Reset()`, каждый `TextDelta` → `BlipPacer.Push(delta)`,
+таймер ~15 мс: `if (pacer.Tick(now)) play(ReplySound.Blip(settings.Sound.Style, ReplySound.PitchFor(persona), rng, ReplySound.Gain(settings.Sound.Volume)))`.
+Звук — моно float PCM 44,1 кГц; «off» даёт пустой массив.
 
 ### Голосовой ввод (`Vera.Core.Speech.VoiceRecorder`)
 
@@ -94,7 +95,7 @@ TurnFailed(TurnId, Message, Aborted, PartialText, Source)
   - `VeraCore.Usage` — токены и примерная стоимость (`Today()`, `ThisMonth()`, `MonthByProvider()`);
   - `VeraCore.RequestLog` — журнал запросов (`Diagnostics.LogRequests`).
 - **Голос:**
-  - `SpeechService.LocalTranscriber` (`stt.provider == "whisper"`) и `LocalSynthesizer` (`tts.engine == "piper"`) задаёт платформа;
+  - `SpeechService.LocalTranscriber` (`stt.provider == "whisper"`) задаёт платформа;
   - `SpeechAudio.RateApplied` — скорость уже учтена сервисом, звук растягивать не нужно.
 - **`VoiceRecorder`:**
   - `SpeechProbability` — нейросетевой VAD вместо порога громкости;
@@ -108,7 +109,7 @@ TurnFailed(TurnId, Message, Aborted, PartialText, Source)
 
 ```csharp
 var local = new LocalAiService(core, modelsRoot, sileroPath);  // после VeraCore
-local.Attach();   // провайдер "local" + Speech.LocalTranscriber (Whisper) + LocalSynthesizer (Piper)
+local.Attach();   // провайдер "local" + Speech.LocalTranscriber (Whisper)
 recorder.SpeechProbability = local.VadHook();                  // Silero вместо порога громкости
 var wake = local.CreateWakeWord();                             // Vosk; null — модель не скачана
 ```

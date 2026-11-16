@@ -31,7 +31,7 @@ public sealed partial class SettingsPanel
     {
         new("brain", "Мозг Веры", "Где Вера думает. Можно поменять в любой момент — память и напоминания останутся.", "think",
             "Моя голова — мои правила. Выбирай с умом: облако умнее, своя модель — бесплатно и без свидетелей~"),
-        new("voice", "Голос и слух", "Как Вера говорит и слышит: синтез речи, распознавание, слово «Вера».", "smug",
+        new("voice", "Голос и слух", "Как Вера слышит и отвечает: распознавание, слово «Вера», звук ответа.", "smug",
             "Хочешь слышать меня чаще? Понимаю. Только громкость не выкручивай — я и так убедительна."),
         new("look", "Характер и вид", "Как Вера к тебе обращается, её характер, скин и поведение на рабочем столе.", "happy",
             "Характер менять можно. Но лучше меня ты всё равно не найдёшь~"),
@@ -329,7 +329,6 @@ public sealed partial class SettingsPanel
         if (Local is not { } l) return new List<string> { "модуль локального ИИ не загрузился (см. error.log)" };
         if (l.Llm.ResolveModelPath(S.CurrentModel) is null) list.Add("языковую модель");
         if (l.WhisperModelPath() is null) list.Add("Whisper");
-        if (!l.PiperReady(out _)) list.Add("голос Piper");
         if (!l.Store.IsInstalled("vosk-small-ru")) list.Add("Vosk");
         return list;
     }
@@ -742,19 +741,6 @@ public sealed partial class SettingsPanel
     }
 
     // ================================================================== offline voice helpers
-
-    private UIElement PiperRows()
-    {
-        var sp = new StackPanel();
-        sp.Children.Add(DownloadRow(ModelCatalog.Get("piper")!));
-        foreach (var v in ModelCatalog.Voice.Where(x => x.Kind == AssetKind.PiperVoice))
-        {
-            var id = v.Id;
-            sp.Children.Add(DownloadRow(v, s => s.Tts.PiperVoice == id, s => s.Tts.PiperVoice = id,
-                badge: id == "ru_RU-irina-medium" ? "⭐ женский" : null));
-        }
-        return sp;
-    }
 
     private UIElement WhisperRows()
     {

@@ -88,7 +88,7 @@ public sealed class AppHost : IToolHost
 
     public FileStorage Storage { get; }
     public VeraCore Core { get; }
-    /// <summary>Офлайн-ИИ: встроенная модель, Whisper, Piper, Silero, Vosk (null — не удалось инициализировать).</summary>
+    /// <summary>Офлайн-ИИ: встроенная модель, Whisper, Silero, Vosk (null — не удалось инициализировать).</summary>
     public LocalAiService? Local { get; }
     /// <summary>Сервер синхронизации с телефоном.</summary>
     public SyncHost SyncHost { get; }

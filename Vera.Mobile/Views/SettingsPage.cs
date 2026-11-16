@@ -1,5 +1,6 @@
 using System.Globalization;
 using Vera.Core;
+using Vera.Core.Speech;
 using Vera.Core.Providers;
 using Vera.Mobile.Platform;
 using Vera.Mobile.Services;
@@ -18,14 +19,6 @@ public sealed class SettingsPage : ContentPage
     private readonly Entry _model;
     private readonly Label _modelHint;
     private readonly VerticalStackLayout _keys = new() { Spacing = 12 };
-    private readonly VerticalStackLayout _ttsOpenai;
-    private readonly VerticalStackLayout _ttsEleven;
-    private readonly VerticalStackLayout _ttsSystem;
-    private readonly Picker _elevenVoice;
-    private readonly List<string> _elevenIds = new();
-    private readonly Picker _systemVoice;
-    private readonly List<string> _systemIds = new();
-    private readonly Editor _ttsInstructions;
     private readonly View _sttOpenai;
     private readonly View _sttGroq;
     private readonly View _wakeSub;
@@ -39,8 +32,7 @@ public sealed class SettingsPage : ContentPage
         _welcome = Ui.Card(
             Ui.H3(L10n.T("Добро пожаловать!")),
             Ui.Label(L10n.T("Чтобы Вера заработала, вставь хотя бы один API-ключ ниже — например, OpenRouter (один ключ даёт доступ к сотням моделей). ") +
-                     L10n.T("Для голоса и распознавания речи нужен ключ OpenAI (или Groq для распознавания + системный голос Android бесплатно, ") +
-                     L10n.T("или распознавание средствами телефона)."), 14, Ui.Text));
+                     L10n.T("Для распознавания речи — ключ OpenAI или Groq, или бесплатно средствами телефона."), 14, Ui.Text));
         _welcome.Stroke = Ui.Accent.WithAlpha(0.5f);
 
         // ------------------------------------------------ модель
@@ -110,98 +102,25 @@ public sealed class SettingsPage : ContentPage
             Ui.Field(L10n.T("Дополнительные указания (системный промпт)"), Ui.Box(EditorSetting(
                 L10n.T("Например: я студент-медик, объясняй просто и с примерами"), s => s.CustomPrompt, (s, v) => s.CustomPrompt = v), 90)));
 
-        // ------------------------------------------------ голос
-        _ttsInstructions = EditorSetting("", s => s.Tts.OpenaiInstructions, (s, v) => s.Tts.OpenaiInstructions = v, 70);
-        var fromPersona = Ui.Ghost(L10n.T("по характеру"), (_, _) =>
-        {
-            var hint = Personas.Get(S.Persona).TtsHint;
-            _ttsInstructions.Text = hint;
-            Set(s => s.Tts.OpenaiInstructions = hint);
-        });
-        fromPersona.HorizontalOptions = LayoutOptions.Start;
-        _ttsOpenai = new VerticalStackLayout
-        {
-            Spacing = 10,
-            Children =
-            {
-                Ui.Field(L10n.T("Голос"), Choice(
-                    new[] { "shimmer", "nova", "coral", "sage", "ballad", "alloy", "verse", "fable", "ash", "echo", "onyx" }, null,
-                    s => s.Tts.OpenaiVoice, (s, v) => s.Tts.OpenaiVoice = v)),
-                Ui.Field(L10n.T("Модель"), Choice(new[] { "gpt-4o-mini-tts", "tts-1", "tts-1-hd" }, null, s => s.Tts.OpenaiModel, (s, v) => s.Tts.OpenaiModel = v)),
-                Ui.Field(L10n.T("Интонация (инструкция для голоса)"), Ui.Box(_ttsInstructions, 70)),
-                fromPersona,
-            },
-        };
-
-        _elevenVoice = Ui.Picker(Array.Empty<string>(), L10n.T("Голос ElevenLabs"));
-        _elevenVoice.SelectedIndexChanged += (_, _) =>
-        {
-            if (_loading || _elevenVoice.SelectedIndex < 0 || _elevenVoice.SelectedIndex >= _elevenIds.Count) return;
-            var v = _elevenIds[_elevenVoice.SelectedIndex];
-            Set(s => s.Tts.ElevenVoiceId = v);
-        };
-        var elevenRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
-        elevenRow.Add(Ui.Box(_elevenVoice), 0);
-        elevenRow.Add(Ui.Ghost(L10n.T("Загрузить"), async (_, _) => await LoadElevenVoicesAsync(true)), 1);
-        _ttsEleven = new VerticalStackLayout
-        {
-            Spacing = 10,
-            Children =
-            {
-                Ui.Field(L10n.T("Голос ElevenLabs"), elevenRow),
-                Ui.Field(L10n.T("Модель"), Choice(
-                    new[] { "eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_turbo_v2_5" },
-                    new[] { L10n.T("eleven_multilingual_v2 (качество)"), L10n.T("eleven_flash_v2_5 (быстро)"), "eleven_turbo_v2_5" },
-                    s => s.Tts.ElevenModel, (s, v) => s.Tts.ElevenModel = v)),
-            },
-        };
-
-        _systemVoice = Ui.Picker(Array.Empty<string>(), L10n.T("Системный голос"));
-        _systemVoice.SelectedIndexChanged += (_, _) =>
-        {
-            if (_loading || _systemVoice.SelectedIndex < 0 || _systemVoice.SelectedIndex >= _systemIds.Count) return;
-            var v = _systemIds[_systemVoice.SelectedIndex];
-            Set(s => s.Tts.SystemVoice = v);
-        };
-        var ttsSettingsBtn = Ui.Ghost(L10n.T("Настройки синтеза речи Android"), (_, _) => PermissionsUi.OpenTtsSettings());
-        ttsSettingsBtn.HorizontalOptions = LayoutOptions.Start;
-        _ttsSystem = new VerticalStackLayout
-        {
-            Spacing = 10,
-            Children =
-            {
-                Ui.Field(L10n.T("Системный голос"), Ui.Box(_systemVoice),
-                    L10n.T("Русский голос можно скачать в настройках Android → Синтез речи (Google TTS → Установка голосовых данных).")),
-                ttsSettingsBtn,
-            },
-        };
-
-        var testText = Ui.Entry();
-        testText.Text = L10n.T("Хе-хе, семпай~ Ну что, слышно меня? Только не влюбись!");
-        var testRow = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, ColumnSpacing = 8 };
-        testRow.Add(Ui.Box(testText), 0);
-        testRow.Add(Ui.Primary(L10n.T("▶ Тест"), (_, _) =>
-        {
-            if (S.Tts.Engine == "off") { Ui.Toast("Голос выключен"); return; }
-            App.Speech.Stop();
-            App.Speech.ResetErrors();
-            App.Speech.Enqueue(testText.Text ?? "");
-        }), 1);
-
+        // ------------------------------------------------ звук ответа (вместо синтеза речи)
+        const string sample = "Поставила на 18:00. Опоздаешь — оформлю служебную записку, а пока свободен~";
+        void Listen() { if (S.Sound.Style != "off") App.Speech.Say(L10n.T(sample)); }
         var voiceCard = Ui.Card(
-            Ui.H3(L10n.T("🔊 Голос Веры")),
-            Ui.Field(L10n.T("Движок синтеза речи"), Choice(
-                new[] { "openai", "elevenlabs", "system", "off" },
-                new[] { L10n.T("OpenAI TTS (живой голос, нужен ключ OpenAI)"), L10n.T("ElevenLabs (нужен ключ ElevenLabs)"), L10n.T("Системный голос Android (бесплатно)"), L10n.T("Выключен") },
-                s => s.Tts.Engine, (s, v) => s.Tts.Engine = v, UpdateVisibility)),
-            Ui.Field(L10n.T("Когда говорить вслух"), Choice(
-                new[] { "voice", "always", "never" },
-                new[] { L10n.T("Только на голосовые запросы"), L10n.T("Всегда"), L10n.T("Никогда (кроме напоминаний)") },
-                s => s.Tts.AutoSpeak, (s, v) => s.Tts.AutoSpeak = v)),
-            _ttsOpenai, _ttsEleven, _ttsSystem,
-            SliderRow(L10n.T("Скорость"), 0.6, 1.6, 0.05, s => s.Tts.Rate, (s, v) => s.Tts.Rate = v, v => v.ToString("0.00", CultureInfo.InvariantCulture) + "×"),
-            SliderRow(L10n.T("Громкость"), 0, 1, 0.05, s => s.Tts.Volume, (s, v) => s.Tts.Volume = v, v => ((int)Math.Round(v * 100)) + "%"),
-            testRow);
+            Ui.H3(L10n.T("🔊 Звук ответа")),
+            Ui.MutedLabel(L10n.T("Пока Вера печатает ответ, звучит тихий «голосок» в такт буквам. Тон подстраивается под характер.")),
+            Ui.Field(L10n.T("Звук"), Choice(
+                ReplySound.Styles.Select(x => x.Id).ToArray(),
+                ReplySound.Styles.Select(x => L10n.T(x.Title) + " — " + L10n.T(x.About)).ToArray(),
+                s => s.Sound.Style, (s, v) => s.Sound.Style = v, Listen)),
+            Ui.Field(L10n.T("Громкость"), Choice(
+                ReplySound.Volumes.Select(x => x.Id).ToArray(),
+                ReplySound.Volumes.Select(x => L10n.T(x.Title)).ToArray(),
+                s => s.Sound.Volume, (s, v) => s.Sound.Volume = v, Listen)),
+            Ui.Primary(L10n.T("▶ Послушать"), (_, _) =>
+            {
+                if (S.Sound.Style == "off") { Ui.Toast("Звук ответа выключен — выбери вариант"); return; }
+                Listen();
+            }));
 
         // ------------------------------------------------ распознавание
         _sttOpenai = Ui.Field(L10n.T("Модель OpenAI"), Choice(new[] { "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1" }, null,
@@ -239,7 +158,7 @@ public sealed class SettingsPage : ContentPage
             Ui.H3(L10n.T("⏰ Напоминания")),
             Ui.Toggle(L10n.T("Уведомление Android"), S.Reminders.Notification, v => Set(s => s.Reminders.Notification = v)),
             Ui.Toggle(L10n.T("Звуковой сигнал"), S.Reminders.Sound, v => Set(s => s.Reminders.Sound = v)),
-            Ui.Toggle(L10n.T("Вера проговаривает напоминание голосом"), S.Reminders.Speak, v => Set(s => s.Reminders.Speak = v), L10n.T("если приложение открыто")),
+            Ui.Toggle(L10n.T("«Голосок» Веры вместе с напоминанием"), S.Reminders.Speak, v => Set(s => s.Reminders.Speak = v), L10n.T("если приложение открыто")),
             _permRows);
 
         // ------------------------------------------------ возможности
@@ -290,8 +209,6 @@ public sealed class SettingsPage : ContentPage
         RenderPermissions();
         UpdateVisibility();
         _loading = false;
-        _ = LoadElevenVoicesAsync(false);
-        _ = LoadSystemVoicesAsync();
     }
 
     protected override void OnDisappearing()
@@ -401,14 +318,9 @@ public sealed class SettingsPage : ContentPage
 
     private void UpdateVisibility()
     {
-        var engine = S.Tts.Engine;
-        _ttsOpenai.IsVisible = engine == "openai";
-        _ttsEleven.IsVisible = engine == "elevenlabs";
-        _ttsSystem.IsVisible = engine == "system";
         _sttOpenai.IsVisible = S.Stt.Provider == "openai";
         _sttGroq.IsVisible = S.Stt.Provider == "groq";
         _wakeSub.IsVisible = S.Voice.WakeWord;
-        if (engine == "system") _ = LoadSystemVoicesAsync();
     }
 
     // ================================================================== провайдер и модель
@@ -564,49 +476,6 @@ public sealed class SettingsPage : ContentPage
                 Content = new VerticalStackLayout { Spacing = 8, Children = { head, Ui.Box(entry), buttons, result, link } },
             });
         }
-    }
-
-    // ================================================================== голоса
-
-    private async Task LoadElevenVoicesAsync(bool explicitly)
-    {
-        var cur = S.Tts.ElevenVoiceId;
-        var items = new List<(string Id, string Name)> { ("", L10n.T("(по умолчанию)")) };
-        if (Core.Secrets.Has("elevenlabs"))
-        {
-            try
-            {
-                var voices = await Task.Run(() => Core.Speech.ElevenVoicesAsync());
-                items.AddRange(voices);
-            }
-            catch (Exception e)
-            {
-                if (explicitly) Ui.Toast(e.Message, true);
-            }
-        }
-        else if (explicitly) Ui.Toast(L10n.T("Сначала добавь ключ ElevenLabs"));
-        if (cur.Length > 0 && items.All(v => v.Id != cur)) items.Add((cur, cur));
-        _loading = true;
-        _elevenIds.Clear();
-        _elevenIds.AddRange(items.Select(v => v.Id));
-        _elevenVoice.ItemsSource = items.Select(v => v.Name).ToList();
-        _elevenVoice.SelectedIndex = Math.Max(0, _elevenIds.IndexOf(cur));
-        _loading = false;
-    }
-
-    private async Task LoadSystemVoicesAsync()
-    {
-        if (S.Tts.Engine != "system") return;
-        var cur = S.Tts.SystemVoice;
-        var items = new List<(string Id, string Name)> { ("", L10n.T("(авто, русский)")) };
-        try { items.AddRange(await App.Speech.SystemVoice.VoicesAsync()); } catch { }
-        if (cur.Length > 0 && items.All(v => v.Id != cur)) items.Add((cur, cur));
-        _loading = true;
-        _systemIds.Clear();
-        _systemIds.AddRange(items.Select(v => v.Id));
-        _systemVoice.ItemsSource = items.Select(v => v.Name).ToList();
-        _systemVoice.SelectedIndex = Math.Max(0, _systemIds.IndexOf(cur));
-        _loading = false;
     }
 
     // ================================================================== активация и разрешения

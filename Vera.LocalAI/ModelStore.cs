@@ -14,7 +14,6 @@ public sealed record DownloadProgress(string AssetId, long Done, long Total, dou
 /// root/llm/*.gguf                       языковые модели (свои файлы тоже можно положить сюда)
 /// root/voice/vosk-small-ru/...          Vosk
 /// root/voice/ggml-*.bin                 Whisper
-/// root/voice/piper/piper.exe            Piper + голоса root/voice/*.onnx(.json)
 /// root/backends/runtimes/win-x64/native/vulkan/llama.dll   ускорители llama.cpp
 /// </code>
 /// </summary>
@@ -43,7 +42,6 @@ public sealed class ModelStore
         _ => Path.Combine(VoiceDir, a.Files[0].FileName),
     };
 
-    public string PiperExe => Path.Combine(VoiceDir, "piper", OperatingSystem.IsWindows() ? "piper.exe" : "piper");
 
     public bool IsInstalled(AssetInfo a)
     {

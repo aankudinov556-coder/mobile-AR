@@ -70,15 +70,12 @@ public sealed class VeraCore : IDisposable
     /// <summary>Фраза, которую Вера говорит при срабатывании напоминания.</summary>
     public string ReminderPhrase(Reminder r, bool missed) => Line(missed ? "missed" : "reminder", r.Text);
 
-    /// <summary>Проверить ключ: openrouter/anthropic/openai/groq/elevenlabs.</summary>
+    /// <summary>Проверить ключ: openrouter/anthropic/openai/groq/tavily/brave.</summary>
     public async Task<string> TestKeyAsync(string name, CancellationToken ct = default)
     {
         switch (name)
         {
             case "groq": return await Speech.TestGroqAsync(ct);
-            case "elevenlabs":
-                var v = await Speech.ElevenVoicesAsync(ct);
-                return $"Ключ работает ({v.Count} голосов)";
             case "tavily" or "brave":
                 var (_, used) = await Vera.Core.Tools.WebSearch.SearchAsync(Http, "погода", name, Secrets.Get, 1, ct);
                 return used == name ? "Ключ работает" : "Ключ не сработал — поиск пошёл через " + used;

@@ -865,13 +865,13 @@ public sealed partial class PetWindow : Window
         ShowText(text, head: head, ms: ms, opensChat: opensChat);
     }
 
-    /// <summary>Тест голоса из настроек: пузырь + озвучка.</summary>
+    /// <summary>Тест звука из настроек: пузырь + «голосок».</summary>
     public void SpeakTest(string text)
     {
         Interaction();
         SetEmotion("smug", 6000);
         ShowText(text, ms: 6000);
-        _host.Voice.Say(text, resetErrors: true);
+        _host.Voice.Say(text);
     }
 
     private async Task GreetAsync()
@@ -894,7 +894,7 @@ public sealed partial class PetWindow : Window
         {
             case TurnStarted ts:
             {
-                _turns[ts.TurnId] = new TurnView { Speak = _host.Voice.ShouldSpeak(ts.Source) };
+                _turns[ts.TurnId] = new TurnView { Speak = Core.Settings.Current.Sound.Style != "off" };
                 _mode = PetMode.Thinking;
                 ShowDots("хм");
                 break;
@@ -1015,7 +1015,7 @@ public sealed partial class PetWindow : Window
         {
             if (gen == _bubbleGen && _bubbleSticky) HideBubbleLater(15000);
         }, TaskScheduler.FromCurrentSynchronizationContext());
-        if (s.Reminders.Speak && s.Tts.Engine != "off")
+        if (s.Reminders.Speak && s.Sound.Style != "off")
         {
             _host.Voice.StopSpeaking();
             _ = Task.Delay(s.Reminders.Sound ? 900 : 0).ContinueWith(_ => _host.Voice.Say(phrase),

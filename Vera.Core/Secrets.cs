@@ -9,9 +9,8 @@ public sealed class SecretsService
     {
         ("openrouter", "OpenRouter", "чат — сотни моделей по одному ключу", "https://openrouter.ai/keys"),
         ("anthropic", "Anthropic", "чат — Claude", "https://console.anthropic.com/settings/keys"),
-        ("openai", "OpenAI", "чат, голос и распознавание речи", "https://platform.openai.com/api-keys"),
+        ("openai", "OpenAI", "чат и распознавание речи", "https://platform.openai.com/api-keys"),
         ("groq", "Groq", "необязательно — быстрое распознавание речи", "https://console.groq.com/keys"),
-        ("elevenlabs", "ElevenLabs", "необязательно — голоса ElevenLabs", "https://elevenlabs.io/app/settings/api-keys"),
         ("tavily", "Tavily", "необязательно — веб-поиск получше (есть бесплатный лимит)", "https://app.tavily.com/home"),
         ("brave", "Brave Search", "необязательно — веб-поиск Brave (есть бесплатный лимит)", "https://api-dashboard.search.brave.com/app/keys"),
         ("custom", "Свой сервер", "необязательно — ключ своего OpenAI-совместимого сервера", ""),

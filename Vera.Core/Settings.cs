@@ -101,7 +101,8 @@ public sealed class VeraSettings
     public string CustomPrompt { get; set; } = "";
 
     public SttSettings Stt { get; set; } = new();
-    public TtsSettings Tts { get; set; } = new();
+    /// <summary>Звук, пока Вера печатает ответ (вместо синтеза речи, v2.5).</summary>
+    public ReplySoundSettings Sound { get; set; } = new();
     public VoiceSettings Voice { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
     public PetSettings Pet { get; set; } = new();
@@ -150,23 +151,12 @@ public sealed class SttSettings
     public string Language { get; set; } = "ru";
 }
 
-public sealed class TtsSettings
+public sealed class ReplySoundSettings
 {
-    /// <summary>"openai" | "elevenlabs" | "system" | "piper" (офлайн, ПК) | "off"</summary>
-    public string Engine { get; set; } = "openai";
-    /// <summary>Голос Piper, например "ru_RU-irina-medium"</summary>
-    public string PiperVoice { get; set; } = "ru_RU-irina-medium";
-    /// <summary>"voice" — только на голосовые запросы, "always", "never"</summary>
-    public string AutoSpeak { get; set; } = "voice";
-    public string OpenaiModel { get; set; } = "gpt-4o-mini-tts";
-    public string OpenaiVoice { get; set; } = "shimmer";
-    public string OpenaiInstructions { get; set; } =
-        "Говори как озорная дерзкая девушка-аниме лет двадцати: игриво, с лёгкой насмешкой и улыбкой в голосе, живо и быстро.";
-    public string ElevenVoiceId { get; set; } = "";
-    public string ElevenModel { get; set; } = "eleven_multilingual_v2";
-    public string SystemVoice { get; set; } = "";
-    public double Rate { get; set; } = 1.0;
-    public double Volume { get; set; } = 0.9;
+    /// <summary>"pixel" | "drops" | "soft" | "off"</summary>
+    public string Style { get; set; } = "pixel";
+    /// <summary>"low" | "mid" | "high"</summary>
+    public string Volume { get; set; } = "mid";
 }
 
 public sealed class VoiceSettings
@@ -367,7 +357,7 @@ public sealed class SettingsService
     }
 }
 
-/// <summary>Готовые наборы настроек: одной кнопкой переключить провайдера, голос и распознавание.</summary>
+/// <summary>Готовые наборы настроек: одной кнопкой переключить провайдера и распознавание.</summary>
 public static class SettingsPresets
 {
     public sealed record Preset(string Id, string Title, string About, Action<VeraSettings> Apply);
@@ -375,38 +365,35 @@ public static class SettingsPresets
     public static readonly IReadOnlyList<Preset> All = new[]
     {
         new Preset("offline", "🌙 Бесплатно и офлайн",
-            "Всё на этом ПК: встроенная модель, Whisper, голос Piper, имя слушает Vosk. Без ключей и интернета (кроме поиска). Нужно скачать модели.",
+            "Всё на этом ПК: встроенная модель, Whisper, имя слушает Vosk. Без ключей и интернета (кроме поиска). Нужно скачать модели.",
             s =>
             {
                 s.Provider = "local";
                 s.Stt.Provider = "whisper";
-                s.Tts.Engine = "piper";
                 s.Voice.WakeEngine = "vosk";
                 s.Voice.Vad = "silero";
                 s.Search.Engine = "auto";
                 s.WebSearch = false;
             }),
         new Preset("quality", "✨ Максимум качества",
-            "Claude от Anthropic, живой голос и распознавание OpenAI. Нужны ключи Anthropic и OpenAI.",
+            "Claude от Anthropic и распознавание речи OpenAI. Нужны ключи Anthropic и OpenAI.",
             s =>
             {
                 s.Provider = "anthropic";
                 s.Models["anthropic"] = VeraSettings.DefaultModel("anthropic");
                 s.Effort = "medium";
                 s.Stt.Provider = "openai";
-                s.Tts.Engine = "openai";
                 s.Voice.WakeEngine = "vosk";
                 s.Voice.Vad = "silero";
             }),
         new Preset("cheap", "🪙 Экономно",
-            "Недорогая модель через OpenRouter, распознавание Groq (почти бесплатно), системный голос Windows.",
+            "Недорогая модель через OpenRouter и распознавание Groq (почти бесплатно).",
             s =>
             {
                 s.Provider = "openrouter";
                 s.Models["openrouter"] = VeraSettings.DefaultModel("openrouter");
                 s.Effort = "low";
                 s.Stt.Provider = "groq";
-                s.Tts.Engine = "system";
                 s.Voice.WakeEngine = "vosk";
                 s.Voice.Vad = "silero";
             }),

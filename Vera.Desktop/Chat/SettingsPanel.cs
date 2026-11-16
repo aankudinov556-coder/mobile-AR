@@ -15,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Vera.Core;
+using Vera.Core.Speech;
 using Vera.Core.Providers;
 using Vera.LocalAI;
 using Vera.Desktop.Audio;
@@ -38,8 +39,6 @@ public sealed partial class SettingsPanel : Grid
     private ComboBox _model = null!;
     private TextBlock _modelHint = null!;
     private readonly Dictionary<string, RadioButton> _providerButtons = new();
-    private ComboBox _elevenVoice = null!;
-    private ComboBox _systemVoice = null!;
     private ComboBox _mic = null!;
     private StackPanel _apps = null!;
     private TextBox _appName = null!;
@@ -584,132 +583,94 @@ public sealed partial class SettingsPanel : Grid
             Ui.Field("Дополнительные указания (системный промпт)", prompt));
     }
 
-    // ================================================================== voice (TTS)
+    // ================================================================== reply sound (вместо синтеза речи)
+
+    private const string SoundSample = "Поставила на 18:00. Опоздаешь — оформлю служебную записку, а пока свободен~";
 
     private Border VoiceCard()
     {
-        var engine = Combo(new[]
+        var list = new StackPanel();
+        foreach (var (id, title, about) in ReplySound.Styles)
         {
-            ("openai", "OpenAI TTS (живой голос, нужен ключ OpenAI)"),
-            ("elevenlabs", "ElevenLabs (нужен ключ ElevenLabs)"),
-            ("piper", "Piper — офлайн-голос на этом ПК (бесплатно)"),
-            ("system", "Системный голос Windows (бесплатно)"),
-            ("off", "Выключен"),
-        }, s => s.Tts.Engine, (s, v) => s.Tts.Engine = v);
-        var autoSpeak = Combo(new[]
-        {
-            ("voice", "Только на голосовые запросы"),
-            ("always", "Всегда"),
-            ("never", "Никогда (кроме напоминаний)"),
-        }, s => s.Tts.AutoSpeak, (s, v) => s.Tts.AutoSpeak = v);
-
-        // OpenAI
-        var oVoice = Combo(Same("shimmer", "nova", "coral", "sage", "ballad", "alloy", "verse", "fable", "ash", "echo", "onyx"),
-            s => s.Tts.OpenaiVoice, (s, v) => s.Tts.OpenaiVoice = v);
-        var oModel = Combo(Same("gpt-4o-mini-tts", "tts-1", "tts-1-hd"), s => s.Tts.OpenaiModel, (s, v) => s.Tts.OpenaiModel = v);
-        var instr = Text(s => s.Tts.OpenaiInstructions, (s, v) => s.Tts.OpenaiInstructions = v, multiline: true);
-        var fromPersona = Ui.LinkButton("по характеру", () => Save(s => s.Tts.OpenaiInstructions = Personas.Get(s.Persona).TtsHint));
-        var openaiSub = Ui.Sub(
-            Ui.Row(new UIElement[] { Ui.Field("Голос", oVoice), Ui.Field("Модель", oModel) }, 8, 0, 1),
-            Ui.Field("Интонация (инструкция для голоса)", instr, fromPersona));
-        ShowIf(openaiSub, s => s.Tts.Engine == "openai");
-
-        // ElevenLabs
-        _elevenVoice = new ComboBox();
-        _refreshers.Add(() =>
-        {
-            var cur = S.Tts.ElevenVoiceId ?? "";
-            if (_elevenVoice.Items.Count == 0 || (cur.Length > 0 && !_elevenVoice.Items.OfType<ComboBoxItem>().Any(i => (i.Tag as string) == cur)))
+            var head = Ui.Text(title, 14.5, "Fg", FontWeights.Bold);
+            var text = Ui.Muted(about, 12.5);
+            var dot = new System.Windows.Shapes.Ellipse { Width = 18, Height = 18, StrokeThickness = 2.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+            var row = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(dot, Dock.Left);
+            row.Children.Add(dot);
+            row.Children.Add(new StackPanel { Children = { head, text } });
+            var rb = new RadioButton
             {
-                var keep = _elevenVoice.Items.OfType<ComboBoxItem>().Where(i => (i.Tag as string)?.Length > 0).Select(i => ((string)i.Tag, (string)i.Content)).ToList();
-                var opts = new List<(string, string)> { ("", "(по умолчанию)") };
-                opts.AddRange(keep);
-                if (cur.Length > 0 && keep.All(k => k.Item1 != cur)) opts.Add((cur, "текущий: " + cur));
-                Ui.SetOptions(_elevenVoice, opts);
+                Content = row,
+                GroupName = "replySound",
+                Style = Ui.Style("Btn.Base"),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(14, 11, 14, 11),
+                BorderThickness = new Thickness(2),
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+            Ui.SetRadius(rb, new CornerRadius(14));
+            void Paint()
+            {
+                var on = rb.IsChecked == true;
+                rb.SetResourceReference(Control.BackgroundProperty, on ? "Bg3" : "Bg2");
+                rb.SetResourceReference(Control.BorderBrushProperty, on ? "Accent" : "Line");
+                rb.Effect = on ? Anim.HardShadow(3) : null;
+                dot.Stroke = on ? Brushes.Black : (Brush)(TryFindResource("Muted") ?? Brushes.Gray);
+                if (on) dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Accent"); else dot.Fill = Brushes.Transparent;
             }
-            if (!_elevenVoice.IsDropDownOpen) Ui.Select(_elevenVoice, cur);
-        });
-        _elevenVoice.SelectionChanged += (_, _) =>
-        {
-            if (_loading) return;
-            var v = Ui.Selected(_elevenVoice);
-            if (v is not null && v != (S.Tts.ElevenVoiceId ?? "")) Save(s => s.Tts.ElevenVoiceId = v);
-        };
-        var elevenRefresh = Ui.IconButton("refresh", "Загрузить голоса", LoadElevenVoices);
-        elevenRefresh.VerticalAlignment = VerticalAlignment.Bottom;
-        elevenRefresh.Margin = new Thickness(0, 0, 0, 8);
-        var eModel = Combo(new[]
-        {
-            ("eleven_multilingual_v2", "eleven_multilingual_v2 (качество)"),
-            ("eleven_flash_v2_5", "eleven_flash_v2_5 (быстро)"),
-            ("eleven_turbo_v2_5", "eleven_turbo_v2_5"),
-        }, s => s.Tts.ElevenModel, (s, v) => s.Tts.ElevenModel = v);
-        var elevenSub = Ui.Sub(
-            Ui.Row(new UIElement[] { Ui.Field("Голос ElevenLabs", _elevenVoice), elevenRefresh }, 8, 0),
-            Ui.Field("Модель", eModel));
-        ShowIf(elevenSub, s => s.Tts.Engine == "elevenlabs");
-
-        // системный
-        var sysOpts = new List<(string, string)> { ("", "(авто, русский)") };
-        sysOpts.AddRange(SystemVoice.Voices().Select(v => (v.Name, $"{v.Name} ({v.Language})")));
-        _systemVoice = Combo(sysOpts, s => s.Tts.SystemVoice, (s, v) => s.Tts.SystemVoice = v);
-        var sysNote = Ui.Muted("Русский голос «Irina» появляется после установки русского языкового пакета Windows (Параметры → Время и язык → Речь).");
-        var systemSub = Ui.Sub(Ui.Field("Системный голос", _systemVoice), sysNote);
-        ShowIf(systemSub, s => s.Tts.Engine == "system");
-
-        // Piper
-        var piperSub = Ui.Sub(
-            Ui.Muted("Нейросетевой голос без интернета. Скачай программу Piper и один голос — пока не скачано, говорит системный голос."),
-            PiperRows());
-        ShowIf(piperSub, s => s.Tts.Engine == "piper");
-
-        var rate = SliderField("Скорость", 0.6, 1.6, 0.05, s => s.Tts.Rate, (s, v) => s.Tts.Rate = Math.Round(v, 2), Num2);
-        var volume = SliderField("Громкость", 0, 1, 0.05, s => s.Tts.Volume, (s, v) => s.Tts.Volume = Math.Round(v, 2), Num2);
-
-        var testText = new TextBox { Text = L10n.T("Хе-хе, семпай~ Ну что, слышно меня? Только не влюбись!") };
-        var testBtn = Ui.Button("Тест", "Btn.Primary", "play", () =>
-        {
-            if (S.Tts.Engine == "off")
+            var sid = id;
+            rb.Checked += (_, _) =>
             {
-                _window.Toast("Голос выключен — выбери движок", true);
+                Paint();
+                if (_loading) return;
+                if (S.Sound.Style != sid) Save(st => st.Sound.Style = sid);
+                if (sid != "off") _host.SpeakTest(L10n.T(SoundSample));
+            };
+            rb.Unchecked += (_, _) => Paint();
+            _refreshers.Add(() =>
+            {
+                var cur = ReplySound.Styles.Any(x => x.Id == S.Sound.Style) ? S.Sound.Style : "pixel";
+                if ((cur == sid) != (rb.IsChecked == true)) rb.IsChecked = cur == sid;
+                Paint();
+            });
+            list.Children.Add(rb);
+        }
+
+        var vol = new UniformGrid { Columns = 3 };
+        foreach (var (id, title) in ReplySound.Volumes)
+        {
+            var rb = Ui.Radio(title, "replyVolume", "Segment");
+            rb.Margin = new Thickness(0, 0, 8, 0);
+            var vid = id;
+            rb.Checked += (_, _) =>
+            {
+                if (_loading || S.Sound.Volume == vid) return;
+                Save(st => st.Sound.Volume = vid);
+                _host.SpeakTest(L10n.T(SoundSample));
+            };
+            _refreshers.Add(() => { if ((S.Sound.Volume == vid) != (rb.IsChecked == true)) rb.IsChecked = S.Sound.Volume == vid; });
+            vol.Children.Add(rb);
+        }
+
+        var test = Ui.Button("Послушать", "Btn.Primary", "play", () =>
+        {
+            if (S.Sound.Style == "off")
+            {
+                _window.Toast("Звук ответа выключен — выбери вариант", true);
                 return;
             }
-            _host.SpeakTest(testText.Text);
+            _host.SpeakTest(L10n.T(SoundSample));
         });
-        var testRow = Ui.Row(new UIElement[] { testText, testBtn }, 8, 0);
-        testRow.Margin = new Thickness(0, 6, 0, 0);
+        test.HorizontalAlignment = HorizontalAlignment.Left;
+        test.Margin = new Thickness(0, 6, 0, 0);
 
         return Ui.Card(
-            Ui.Title("🔊 Голос Веры"),
-            Ui.Field("Движок синтеза речи", engine),
-            Ui.Field("Когда говорить вслух", autoSpeak),
-            openaiSub, elevenSub, systemSub, piperSub,
-            rate, volume, testRow);
-    }
-
-    private async void LoadElevenVoices()
-    {
-        try
-        {
-            var voices = await Task.Run(() => Core.Speech.ElevenVoicesAsync());
-            var opts = new List<(string, string)> { ("", "(по умолчанию)") };
-            opts.AddRange(voices.Where(v => v.Id.Length > 0).Select(v => (v.Id, string.IsNullOrEmpty(v.Name) ? v.Id : v.Name)));
-            _loading = true;
-            try
-            {
-                Ui.SetOptions(_elevenVoice, opts);
-                Ui.Select(_elevenVoice, S.Tts.ElevenVoiceId ?? "");
-            }
-            finally
-            {
-                _loading = false;
-            }
-            _window.Toast(L10n.F("Голосов: {0}", voices.Count));
-        }
-        catch (Exception e)
-        {
-            _window.Toast(e.Message, true);
-        }
+            Ui.Title("🔊 Звук ответа"),
+            Ui.Muted("Пока Вера печатает ответ, звучит тихий «голосок» в такт буквам. Тон подстраивается под характер.", 12.5),
+            list,
+            Ui.Field("Громкость", vol),
+            test);
     }
 
     // ================================================================== STT
@@ -907,7 +868,7 @@ public sealed partial class SettingsPanel : Grid
         Ui.Title("⏰ Напоминания"),
         Toggle("Уведомление Windows", s => s.Reminders.Notification, (s, v) => s.Reminders.Notification = v),
         Toggle("Звуковой сигнал", s => s.Reminders.Sound, (s, v) => s.Reminders.Sound = v),
-        Toggle("Вера проговаривает напоминание голосом", s => s.Reminders.Speak, (s, v) => s.Reminders.Speak = v));
+        Toggle("«Голосок» Веры вместе с напоминанием", s => s.Reminders.Speak, (s, v) => s.Reminders.Speak = v));
 
     private Border CapabilitiesCard()
     {

@@ -213,23 +213,53 @@ public class TagFilterTests
 
 public class SpeechTests
 {
-    [Fact]
-    public void ChunkerSplitsSentencesAndSkipsCode()
+    [Theory]
+    [InlineData("pixel")]
+    [InlineData("drops")]
+    [InlineData("soft")]
+    public void BlipsAreShortAndQuiet(string style)
     {
-        var chunks = new List<string>();
-        var c = new SentenceChunker(chunks.Add);
-        foreach (var piece in "Это первое довольно длинное предложение для теста. А вот и второе предложение! ```js\nlet a=1;\n``` И хвост".Chunk(7))
-            c.Push(new string(piece));
-        c.End();
-        Assert.Contains(chunks, x => x.Contains("первое"));
-        Assert.Contains("(код — в чате)", chunks);
-        Assert.DoesNotContain(chunks, x => x.Contains("let a"));
-        Assert.Contains(chunks, x => x.Contains("хвост"));
+        var rng = new Random(7);
+        foreach (var pitch in new[] { ReplySound.PitchFor("boss"), 1.0, ReplySound.PitchFor("sweet") })
+        foreach (var vol in new[] { "low", "mid", "high" })
+        {
+            var b = ReplySound.Blip(style, pitch, rng, ReplySound.Gain(vol));
+            Assert.InRange(b.Length, ReplySound.SampleRate / 50, ReplySound.SampleRate / 8); // 20–125 мс
+            var peak = b.Max(Math.Abs);
+            Assert.InRange(peak, 0.005f, 0.5f); // слышно, но не режет слух
+            Assert.True(Math.Abs(b[^1]) < 0.01f, "звук должен затухать к концу без щелчка");
+            Assert.True(Math.Abs(b[0]) < 0.01f, "атака без щелчка");
+        }
     }
 
     [Fact]
-    public void CleanForSpeechRemovesMarkup() =>
-        Assert.Equal("Привет, мир ссылка", SpeechService.CleanForSpeech("**Привет**, `мир` https://example.com"));
+    public void OffIsSilent() => Assert.Empty(ReplySound.Blip("off", 1, new Random(1)));
+
+    [Fact]
+    public void PacerEmitsOneBlipPerTwoLettersAtSteadyRate()
+    {
+        var p = new BlipPacer();
+        p.Push("Привет, мир!"); // 9 букв → 4 звука
+        Assert.Equal(4, p.Pending);
+        var t = DateTimeOffset.UnixEpoch;
+        Assert.True(p.Tick(t));
+        Assert.False(p.Tick(t + TimeSpan.FromMilliseconds(10))); // слишком рано
+        var n = 1;
+        for (var ms = 0; ms < 2000; ms += 5)
+            if (p.Tick(t + TimeSpan.FromMilliseconds(ms))) n++;
+        Assert.Equal(4, n);
+        Assert.False(p.Active);
+    }
+
+    [Fact]
+    public void PacerCapsLongChunks()
+    {
+        var p = new BlipPacer();
+        p.Push(new string('а', 5000));
+        Assert.Equal(BlipPacer.MaxPending, p.Pending);
+        p.Reset();
+        Assert.False(p.Active);
+    }
 
     [Fact]
     public void WavHeader()

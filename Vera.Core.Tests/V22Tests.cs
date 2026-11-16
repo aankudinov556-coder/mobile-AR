@@ -265,7 +265,7 @@ public class SettingsTransferTests
         var s = new SettingsService(new MemStorage());
         s.Update(SettingsPresets.All.First(p => p.Id == "offline").Apply);
         Assert.Equal("local", s.Current.Provider);
-        Assert.Equal("piper", s.Current.Tts.Engine);
+        Assert.Equal("vosk", s.Current.Voice.WakeEngine);
         Assert.Equal("whisper", s.Current.Stt.Provider);
         Assert.Equal(new[] { "openai" }, SettingsPresets.MissingKeys("quality", k => k == "anthropic"));
         Assert.Empty(SettingsPresets.MissingKeys("offline", _ => false));

@@ -1,12 +1,11 @@
 using Vera.Core;
-using Vera.Core.Speech;
 using Vera.LocalAI.Llm;
 using Vera.LocalAI.Voice;
 
 namespace Vera.LocalAI;
 
 /// <summary>
-/// Всё офлайновое на ПК в одном месте: папка моделей, встроенная LLM, Whisper, Piper, Silero VAD, Vosk.
+/// Всё офлайновое на ПК в одном месте: папка моделей, встроенная LLM, Whisper, Silero VAD, Vosk.
 /// Платформа создаёт один экземпляр после VeraCore и вызывает <see cref="Attach"/>.
 /// </summary>
 public sealed class LocalAiService : IDisposable
@@ -14,7 +13,6 @@ public sealed class LocalAiService : IDisposable
     private readonly VeraCore _core;
     private readonly Lazy<SileroVad?> _vad;
     private readonly WhisperTranscriber _whisper = new();
-    private PiperTts? _piper;
 
     /// <param name="core">ядро</param>
     /// <param name="modelsRoot">папка моделей (ПК: %LOCALAPPDATA%\VeraAssistant\models)</param>
@@ -52,12 +50,11 @@ public sealed class LocalAiService : IDisposable
         return h;
     }
 
-    /// <summary>Зарегистрировать провайдер "local" и подключить офлайн-голос к SpeechService.</summary>
+    /// <summary>Зарегистрировать провайдер "local" и подключить офлайн-распознавание к SpeechService.</summary>
     public void Attach()
     {
         _core.Providers.Register(Llm);
         _core.Speech.LocalTranscriber = TranscribeAsync;
-        _core.Speech.LocalSynthesizer = SynthesizeAsync;
     }
 
     // ---------- Whisper ----------
@@ -75,36 +72,6 @@ public sealed class LocalAiService : IDisposable
             $"Модель Whisper «{s.WhisperModel}» не скачана — открой «Настройки → Голос» и скачай её.");
         _whisper.UnloadAfterMinutes = Math.Max(1, _core.Settings.Current.Local.UnloadAfterMinutes);
         return await _whisper.TranscribeAsync(path, wav, s.Language, ct).ConfigureAwait(false);
-    }
-
-    // ---------- Piper ----------
-
-    public bool PiperReady(out string reason)
-    {
-        var voice = ModelCatalog.PiperVoiceFor(_core.Settings.Current.Tts.PiperVoice);
-        if (!File.Exists(Store.PiperExe)) { reason = "Piper не установлен"; return false; }
-        if (voice is null || !Store.IsInstalled(voice)) { reason = "голос Piper не скачан"; return false; }
-        reason = "";
-        return true;
-    }
-
-    private async Task<SpeechAudio> SynthesizeAsync(string text, CancellationToken ct)
-    {
-        var t = _core.Settings.Current.Tts;
-        if (!PiperReady(out _))
-            return new SpeechAudio { UseSystemVoice = true, Text = text }; // ещё не скачан — говорим голосом Windows
-        _piper ??= new PiperTts(Store.PiperExe, Path.Combine(Path.GetTempPath(), "VeraPiper"));
-        var voice = Store.PathOf(ModelCatalog.PiperVoiceFor(t.PiperVoice)!);
-        try
-        {
-            var wav = await _piper.SynthesizeAsync(voice, text, t.Rate, ct).ConfigureAwait(false);
-            return wav.Length == 0 ? new SpeechAudio { Skip = true } : new SpeechAudio { Audio = wav, Mime = "audio/wav", RateApplied = true };
-        }
-        catch (Exception e) when (e is not OperationCanceledException)
-        {
-            // не молчим: если Piper сломался — системный голос
-            return new SpeechAudio { UseSystemVoice = true, Text = text };
-        }
     }
 
     // ---------- Silero VAD ----------
@@ -128,7 +95,6 @@ public sealed class LocalAiService : IDisposable
     {
         Llm.Dispose();
         _whisper.Dispose();
-        _piper?.Dispose();
         if (_vad.IsValueCreated) _vad.Value?.Dispose();
     }
 }

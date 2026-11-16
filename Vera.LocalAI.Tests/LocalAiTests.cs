@@ -436,9 +436,6 @@ public class CatalogAndVoiceTests
         Assert.Equal(all.Count, all.Select(a => a.Id).Distinct().Count());
         Assert.All(all, a => Assert.All(a.Files, f => Assert.StartsWith("https://", f.Url)));
         Assert.All(ModelCatalog.Llms, a => Assert.EndsWith(".gguf", a.Files[0].FileName));
-        var irina = ModelCatalog.PiperVoiceFor("ru_RU-irina-medium")!;
-        Assert.Equal("https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx", irina.Files[0].Url);
-        Assert.Equal("ru_RU-irina-medium.onnx.json", irina.Files[1].FileName);
         Assert.NotNull(ModelCatalog.WhisperFor("small"));
         Assert.NotNull(ModelCatalog.WhisperFor(""));
     }
@@ -470,15 +467,6 @@ public class CatalogAndVoiceTests
         Assert.Equal("", WhisperTranscriber.Clean(" Продолжение следует... "));
         Assert.Equal("", WhisperTranscriber.Clean("[BLANK_AUDIO]"));
         Assert.Equal("Вера, открой браузер", WhisperTranscriber.Clean(" Вера, открой браузер "));
-    }
-
-    [Fact]
-    public void PiperArgsAndLines()
-    {
-        Assert.Equal("Привет. Как дела?", PiperTts.OneLine("Привет.\r\nКак дела?\n"));
-        var args = PiperTts.Args("v.onnx", 0.8, "out").ToList();
-        Assert.Equal("0.80", args[args.IndexOf("--length_scale") + 1]);
-        Assert.Contains("--output_dir", args);
     }
 
     [Fact]

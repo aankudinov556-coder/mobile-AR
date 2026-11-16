@@ -1,120 +1,170 @@
-using System.Threading.Channels;
+using Android.Media;
+using Encoding = Android.Media.Encoding;
 using Vera.Core;
 using Vera.Core.Speech;
-using Vera.Mobile.Platform;
 
 namespace Vera.Mobile.Services;
 
 /// <summary>
-/// Очередь озвучки: куски текста синтезируются заранее (до двух параллельно), проигрываются строго по порядку.
-/// Облачный голос — mp3 через MediaPlayer, системный — Android TextToSpeech.
+/// «Голосок» Веры вместо синтеза речи (v2.5): пока печатается ответ, звучат короткие тоны в такт буквам.
+/// Один поток AudioTrack на время ответа; звуки смешиваются по 10 мс, темп задаёт общий <see cref="BlipPacer"/>.
+/// Методы можно вызывать из любого потока; события — из фонового.
 /// </summary>
 public sealed class SpeechOutput
 {
-    private sealed record Item(Task<SpeechAudio?> Audio, CancellationToken Ct);
+    private const int Chunk = 441; // 10 мс при 44,1 кГц
+    private static readonly TimeSpan Linger = TimeSpan.FromMilliseconds(350);
 
     private readonly VeraCore _core;
-    private readonly Mp3Player _player = new();
-    private readonly SemaphoreSlim _synth = new(2);
-    private readonly Channel<Item> _queue = Channel.CreateUnbounded<Item>(new UnboundedChannelOptions { SingleReader = true });
     private readonly object _gate = new();
-    private CancellationTokenSource _cts = new();
-    private int _outstanding;
+    private readonly BlipPacer _pacer = new();
+    private readonly List<(float[] Data, int Pos)> _voices = new();
+    private readonly Random _rng = new();
+    private bool _ended = true;
+    private bool _running;
     private int _speaking;
-    private bool _errorShown;
 
-    public SpeechOutput(VeraCore core)
-    {
-        _core = core;
-        _ = Task.Run(PlayLoop);
-    }
+    public SpeechOutput(VeraCore core) => _core = core;
 
-    public SystemVoice SystemVoice { get; } = new();
-
-    /// <summary>true — начала говорить, false — закончила (из фонового потока).</summary>
+    /// <summary>true — «голосок» зазвучал, false — затих (из фонового потока).</summary>
     public event Action<bool>? SpeakingChanged;
-    /// <summary>Уровень звука 0..1 для липсинка (из фонового потока).</summary>
+    /// <summary>Уровень 0..1 для рта (из фонового потока).</summary>
     public event Action<float>? Level;
-    /// <summary>Ошибка голоса (показывается один раз за «сеанс»).</summary>
-    public event Action<string>? Error;
 
-    /// <summary>Есть что говорить (играет или ждёт в очереди).</summary>
-    public bool IsActive => Volatile.Read(ref _outstanding) > 0;
+    /// <summary>Звучит или ещё будет звучать в этом ответе.</summary>
+    public bool IsActive { get { lock (_gate) return _running && (_pacer.Active || _voices.Count > 0 || !_ended); } }
 
     public bool IsSpeaking => Volatile.Read(ref _speaking) == 1;
 
-    public void ResetErrors() => _errorShown = false;
-
-    public void Enqueue(string text)
+    /// <summary>Начался ответ.</summary>
+    public void Begin()
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        if (_core.Settings.Current.Tts.Engine == "off") return;
-        CancellationToken ct;
-        lock (_gate) ct = _cts.Token;
-        Interlocked.Increment(ref _outstanding);
-        var task = SynthAsync(text, ct);
-        _queue.Writer.TryWrite(new Item(task, ct));
+        lock (_gate)
+        {
+            _pacer.Reset();
+            _ended = false;
+        }
     }
 
-    private async Task<SpeechAudio?> SynthAsync(string text, CancellationToken ct)
+    /// <summary>Кусок текста ответа, как он пришёл в чат.</summary>
+    public void Push(string text)
     {
-        await _synth.WaitAsync(ct).ConfigureAwait(false);
+        if (_core.Settings.Current.Sound.Style == "off") return;
+        lock (_gate)
+        {
+            _pacer.Push(text);
+            if (!_pacer.Active || _running) return;
+            _running = true;
+        }
+        _ = Task.Run(Loop);
+    }
+
+    /// <summary>Ответ закончился — доиграть и замолчать.</summary>
+    public void End()
+    {
+        lock (_gate) _ended = true;
+    }
+
+    /// <summary>Короткая фраза целиком: напоминание, тест в настройках.</summary>
+    public void Say(string text)
+    {
+        Stop();
+        Begin();
+        Push(text);
+        End();
+    }
+
+    /// <summary>Замолчать сразу.</summary>
+    public void Stop()
+    {
+        lock (_gate)
+        {
+            _pacer.Reset();
+            _voices.Clear();
+            _ended = true;
+        }
+    }
+
+    private void Loop()
+    {
+        AudioTrack? track = null;
         try
         {
-            return await _core.Speech.SynthesizeAsync(text, ct).ConfigureAwait(false);
+            var min = AudioTrack.GetMinBufferSize(ReplySound.SampleRate, ChannelOut.Mono, Encoding.Pcm16bit);
+            track = new AudioTrack.Builder()
+                .SetAudioAttributes(new AudioAttributes.Builder()!
+                    .SetUsage(AudioUsageKind.Assistant)!
+                    .SetContentType(AudioContentType.Sonification)!
+                    .Build()!)!
+                .SetAudioFormat(new AudioFormat.Builder()!
+                    .SetSampleRate(ReplySound.SampleRate)!
+                    .SetChannelMask(ChannelOut.Mono)!
+                    .SetEncoding(Encoding.Pcm16bit)!
+                    .Build()!)!
+                .SetBufferSizeInBytes(Math.Max(min, Chunk * 2 * 4))!
+                .SetTransferMode(AudioTrackMode.Stream)!
+                .Build()!;
+            track.Play();
+            var mix = new float[Chunk];
+            var pcm = new short[Chunk];
+            var quietSince = DateTimeOffset.UtcNow;
+            while (true)
+            {
+                Array.Clear(mix);
+                bool any, busy;
+                lock (_gate)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    if (_pacer.Tick(now))
+                    {
+                        var s = _core.Settings.Current;
+                        var blip = ReplySound.Blip(s.Sound.Style, ReplySound.PitchFor(s.Persona), _rng, ReplySound.Gain(s.Sound.Volume));
+                        if (blip.Length > 0) _voices.Add((blip, 0));
+                    }
+                    for (var v = _voices.Count - 1; v >= 0; v--)
+                    {
+                        var (data, pos) = _voices[v];
+                        var n = Math.Min(Chunk, data.Length - pos);
+                        for (var i = 0; i < n; i++) mix[i] += data[pos + i];
+                        if (pos + n >= data.Length) _voices.RemoveAt(v);
+                        else _voices[v] = (data, pos + n);
+                    }
+                    any = _voices.Count > 0;
+                    busy = any || _pacer.Active;
+                    if (busy) quietSince = now;
+                    if (!_pacer.Active && !any && (_ended || now - quietSince > TimeSpan.FromSeconds(3)) && now - quietSince > Linger)
+                    {
+                        _running = false;
+                        break;
+                    }
+                }
+                double peak = 0;
+                for (var i = 0; i < Chunk; i++)
+                {
+                    var x = Math.Clamp(mix[i], -1f, 1f);
+                    peak = Math.Max(peak, Math.Abs(x));
+                    pcm[i] = (short)(x * short.MaxValue);
+                }
+                SetSpeaking(busy);
+                Level?.Invoke(any ? (float)Math.Min(1, peak * 6) : 0f);
+                track.Write(pcm, 0, Chunk); // блокирует — задаёт ритм цикла
+            }
+        }
+        catch (Exception)
+        {
+            lock (_gate)
+            {
+                _running = false;
+                _voices.Clear();
+                _pacer.Reset();
+            }
         }
         finally
         {
-            _synth.Release();
-        }
-    }
-
-    private async Task PlayLoop()
-    {
-        await foreach (var item in _queue.Reader.ReadAllAsync().ConfigureAwait(false))
-        {
-            try
-            {
-                if (item.Ct.IsCancellationRequested) continue;
-                SpeechAudio? audio;
-                try { audio = await item.Audio.ConfigureAwait(false); }
-                catch (OperationCanceledException) { continue; }
-                catch (Exception e) { Report(e.Message); continue; }
-                if (audio is null || audio.Skip || item.Ct.IsCancellationRequested) continue;
-
-                SetSpeaking(true);
-                var t = _core.Settings.Current.Tts;
-                if (audio.UseSystemVoice)
-                {
-                    using var lipCts = CancellationTokenSource.CreateLinkedTokenSource(item.Ct);
-                    var lip = Task.Run(async () =>
-                    {
-                        var start = System.Environment.TickCount64;
-                        while (!lipCts.IsCancellationRequested)
-                        {
-                            Level?.Invoke(Mp3Player.Approx(System.Environment.TickCount64 - start));
-                            try { await Task.Delay(50, lipCts.Token).ConfigureAwait(false); } catch { break; }
-                        }
-                        Level?.Invoke(0);
-                    });
-                    try { await SystemVoice.SpeakAsync(audio.Text, t.SystemVoice, (float)t.Rate, (float)t.Volume, item.Ct).ConfigureAwait(false); }
-                    finally { lipCts.Cancel(); await lip.ConfigureAwait(false); }
-                }
-                else if (audio.Audio is { Length: > 0 } bytes)
-                {
-                    await _player.PlayAsync(bytes, (float)t.Rate, (float)Math.Clamp(t.Volume, 0, 1), l => Level?.Invoke(l), item.Ct).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception e) { Report(e.Message); }
-            finally
-            {
-                if (Interlocked.Decrement(ref _outstanding) <= 0)
-                {
-                    Interlocked.Exchange(ref _outstanding, 0);
-                    SetSpeaking(false);
-                }
-            }
+            try { track?.Stop(); } catch { }
+            try { track?.Release(); } catch { }
+            SetSpeaking(false);
+            Level?.Invoke(0);
         }
     }
 
@@ -122,26 +172,6 @@ public sealed class SpeechOutput
     {
         var old = Interlocked.Exchange(ref _speaking, value ? 1 : 0) == 1;
         if (old == value) return;
-        if (!value) Level?.Invoke(0);
         try { SpeakingChanged?.Invoke(value); } catch { }
-    }
-
-    private void Report(string message)
-    {
-        if (_errorShown) return;
-        _errorShown = true;
-        try { Error?.Invoke(message); } catch { }
-    }
-
-    /// <summary>Замолчать и выбросить очередь.</summary>
-    public void Stop()
-    {
-        lock (_gate)
-        {
-            _cts.Cancel();
-            _cts = new CancellationTokenSource();
-        }
-        _player.Stop();
-        SystemVoice.Stop();
     }
 }

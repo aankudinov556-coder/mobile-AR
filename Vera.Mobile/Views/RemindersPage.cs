@@ -603,9 +603,4 @@ public static class PermissionsUi
         var i = new Android.Content.Intent(Android.Provider.Settings.ActionRequestScheduleExactAlarm, Android.Net.Uri.Parse("package:" + ctx.PackageName));
         Start(i);
     }
-
-    public static void OpenTtsSettings()
-    {
-        Start(new Android.Content.Intent("com.android.settings.TTS_SETTINGS"));
-    }
 }

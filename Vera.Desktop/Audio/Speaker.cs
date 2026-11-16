@@ -1,216 +1,143 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Windows.Threading;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using Vera.Core;
-using Windows.Media.SpeechSynthesis;
+using Vera.Core.Speech;
 
 namespace Vera.Desktop.Audio;
 
-/// <summary>Системный голос Windows (OneCore, Windows.Media.SpeechSynthesis).</summary>
-public static class SystemVoice
-{
-    public static IReadOnlyList<(string Name, string Language)> Voices()
-    {
-        try
-        {
-            return SpeechSynthesizer.AllVoices.Select(v => (v.DisplayName, v.Language)).ToList();
-        }
-        catch (Exception)
-        {
-            return Array.Empty<(string, string)>();
-        }
-    }
-
-    /// <summary>Синтез в WAV. Голос — по имени из настроек, иначе первый русский.</summary>
-    public static async Task<byte[]> SynthesizeAsync(string text, string voiceName, double rate)
-    {
-        using var synth = new SpeechSynthesizer();
-        var voices = SpeechSynthesizer.AllVoices;
-        var voice = voices.FirstOrDefault(v => !string.IsNullOrEmpty(voiceName) && v.DisplayName == voiceName)
-                    ?? voices.FirstOrDefault(v => v.Language.StartsWith(Vera.Core.L10n.English ? "en" : "ru", StringComparison.OrdinalIgnoreCase));
-        if (voice is not null) synth.Voice = voice;
-        try
-        {
-            synth.Options.SpeakingRate = Math.Clamp(rate, 0.5, 3.0);
-            synth.Options.AudioPitch = 1.15;
-        }
-        catch (Exception)
-        {
-            // старые сборки Windows 10 — без этих параметров
-        }
-        using var stream = await synth.SynthesizeTextToStreamAsync(text);
-        using var s = stream.AsStreamForRead();
-        using var ms = new MemoryStream();
-        await s.CopyToAsync(ms).ConfigureAwait(false);
-        return ms.ToArray();
-    }
-}
-
-/// <summary>Одно проигрывание с огибающей громкости для липсинка.</summary>
-internal sealed class Playback
-{
-    private const int EnvRate = 50;
-    private readonly WaveOutEvent _out;
-    private readonly float[] _env;
-    private readonly double _bytesPerSecond;
-    private bool _finished;
-
-    public event Action? Finished;
-
-    public Playback(Pcm pcm, float volume)
-    {
-        _env = AudioTools.Envelope(pcm, EnvRate);
-        ISampleProvider sp = new ArraySampleProvider(pcm);
-        sp = new VolumeSampleProvider(sp) { Volume = Math.Clamp(volume, 0f, 1f) };
-        var wave16 = new SampleToWaveProvider16(sp);
-        _bytesPerSecond = wave16.WaveFormat.AverageBytesPerSecond;
-        _out = new WaveOutEvent { DesiredLatency = 200, NumberOfBuffers = 3 };
-        _out.PlaybackStopped += (_, _) => Finish();
-        _out.Init(wave16);
-    }
-
-    public void Start() => _out.Play();
-
-    /// <summary>Уровень звука «сейчас» по позиции воспроизведения (0..1).</summary>
-    public float Level
-    {
-        get
-        {
-            if (_finished) return 0;
-            try
-            {
-                var sec = _out.GetPosition() / _bytesPerSecond;
-                var idx = (int)(sec * EnvRate);
-                return idx >= 0 && idx < _env.Length ? _env[idx] : 0;
-            }
-            catch (Exception)
-            {
-                return 0;
-            }
-        }
-    }
-
-    public void Stop()
-    {
-        try { _out.Stop(); } catch (Exception) { Finish(); }
-    }
-
-    private void Finish()
-    {
-        if (_finished) return;
-        _finished = true;
-        try { _out.Dispose(); } catch (Exception) { }
-        Finished?.Invoke();
-    }
-}
-
 /// <summary>
-/// Очередь фраз: синтез заранее (параллельно), проигрывание по очереди, уровень для липсинка.
+/// «Голосок» Веры вместо синтеза речи (v2.5): пока печатается ответ, звучат короткие тоны в такт буквам.
+/// Один постоянный вывод звука с микшером — без задержки на открытие устройства для каждого «пип».
 /// Все методы вызывать из потока UI.
 /// </summary>
-public sealed class Speaker
+public sealed class Speaker : IDisposable
 {
-    private sealed record Item(string Text, int Gen, Task<Pcm?> Audio);
-
     private readonly VeraCore _core;
-    private readonly Queue<Item> _queue = new();
-    private int _gen;
-    private bool _playing;
-    private Playback? _current;
+    private readonly BlipPacer _pacer = new();
+    private readonly DispatcherTimer _timer;
+    private readonly Random _rng = new();
+    private MixingSampleProvider? _mixer;
+    private WaveOutEvent? _out;
+    private bool _active;
+    private bool _ended = true;
+    private DateTime _levelUntil;
 
-    public Speaker(VeraCore core) => _core = core;
+    public Speaker(VeraCore core, Dispatcher ui)
+    {
+        _core = core;
+        _timer = new DispatcherTimer(DispatcherPriority.Render, ui) { Interval = TimeSpan.FromMilliseconds(15) };
+        _timer.Tick += (_, _) => Tick();
+    }
 
     public event Action? Started;
     public event Action? Ended;
-    public event Action<string>? Error;
 
-    public bool Active => _playing || _queue.Count > 0;
+    /// <summary>Звучит сейчас или ещё будет звучать в этом ответе.</summary>
+    public bool Active => _active;
 
-    /// <summary>Текущий уровень звука 0..1 (для рта).</summary>
-    public float Level => _current?.Level ?? 0f;
+    /// <summary>Уровень «голоса» 0..1 — для рта: открыт, пока звучит «пип».</summary>
+    public float Level => DateTime.UtcNow < _levelUntil ? 0.8f : 0f;
 
-    public void Enqueue(string text)
+    private ReplySoundSettings S => _core.Settings.Current.Sound;
+
+    /// <summary>Начался ответ: сбросить очередь.</summary>
+    public void Begin()
     {
-        var t = (text ?? "").Trim();
-        if (t.Length == 0) return;
-        var item = new Item(t, _gen, Task.Run(() => PrepareAsync(t)));
-        _queue.Enqueue(item);
-        _ = PumpAsync();
+        _pacer.Reset();
+        _ended = false;
     }
 
-    private async Task<Pcm?> PrepareAsync(string text)
+    /// <summary>Кусок текста ответа (как пришёл в чат).</summary>
+    public void Push(string text)
     {
-        var tts = _core.Settings.Current.Tts;
-        var r = await _core.Speech.SynthesizeAsync(text).ConfigureAwait(false);
-        if (r.Skip) return null;
-        if (r.UseSystemVoice)
+        if (S.Style == "off") return;
+        _pacer.Push(text);
+        if (!_pacer.Active) return;
+        if (!_active)
         {
-            var wav = await SystemVoice.SynthesizeAsync(r.Text, tts.SystemVoice, tts.Rate).ConfigureAwait(false);
-            return AudioTools.DecodeWav(wav);
+            _active = true;
+            Started?.Invoke();
         }
-        if (r.Audio is not { Length: > 0 }) return null;
-        // Piper отдаёт WAV, облачные голоса — MP3; если скорость уже учтена сервисом, звук не растягиваем
-        var pcm = r.Mime.Contains("wav", StringComparison.OrdinalIgnoreCase) ? AudioTools.DecodeWav(r.Audio) : AudioTools.DecodeMp3(r.Audio);
-        return r.RateApplied ? pcm : AudioTools.ChangeTempo(pcm, tts.Rate);
+        _timer.Start();
+    }
+
+    /// <summary>Ответ закончился — доиграть очередь и замолчать.</summary>
+    public void End() => _ended = true;
+
+    /// <summary>Короткая фраза целиком (напоминание, тест в настройках).</summary>
+    public void Say(string text)
+    {
+        Stop();
+        Begin();
+        Push(text);
+        End();
     }
 
     public void Stop()
     {
-        _gen++;
-        _queue.Clear();
-        var cur = _current;
-        _current = null;
-        cur?.Stop();
-        if (_playing)
+        _pacer.Reset();
+        _ended = true;
+        _timer.Stop();
+        _levelUntil = default;
+        if (_active)
         {
-            _playing = false;
+            _active = false;
             Ended?.Invoke();
         }
     }
 
-    private async Task PumpAsync()
+    private void Tick()
     {
-        if (_playing) return;
-        if (!_queue.TryDequeue(out var item)) return;
-        _playing = true;
-        Started?.Invoke();
-        try
+        if (_pacer.Tick(DateTimeOffset.UtcNow)) Play();
+        if (_pacer.Active || !_ended) return;
+        if (DateTime.UtcNow < _levelUntil) return; // дать прозвучать последнему
+        _timer.Stop();
+        if (_active)
         {
-            var pcm = await item.Audio;
-            if (item.Gen != _gen) return;
-            if (pcm is { Samples.Length: > 0 }) await PlayAsync(pcm);
-        }
-        catch (Exception e)
-        {
-            if (item.Gen == _gen) Error?.Invoke(e.Message);
-        }
-        finally
-        {
-            if (item.Gen == _gen)
-            {
-                _playing = false;
-                if (_queue.Count == 0) Ended?.Invoke();
-                _ = PumpAsync();
-            }
+            _active = false;
+            Ended?.Invoke();
         }
     }
 
-    private Task PlayAsync(Pcm pcm)
+    private void Play()
     {
-        var tcs = new TaskCompletionSource();
-        var vol = (float)_core.Settings.Current.Tts.Volume;
-        var pb = new Playback(pcm, vol);
-        _current = pb;
-        pb.Finished += () =>
+        var s = _core.Settings.Current;
+        var blip = ReplySound.Blip(s.Sound.Style, ReplySound.PitchFor(s.Persona), _rng, ReplySound.Gain(s.Sound.Volume));
+        if (blip.Length == 0) return;
+        _levelUntil = DateTime.UtcNow.AddMilliseconds(blip.Length * 1000.0 / ReplySound.SampleRate * 0.7);
+        try
         {
-            if (ReferenceEquals(_current, pb)) _current = null;
-            tcs.TrySetResult();
-        };
-        pb.Start();
-        return tcs.Task;
+            EnsureOutput();
+            _mixer!.AddMixerInput(new ArraySampleProvider(blip, ReplySound.SampleRate, 1));
+        }
+        catch (Exception)
+        {
+            // нет устройства вывода — без звука, рот всё равно шевелится
+            DisposeOutput();
+        }
+    }
+
+    private void EnsureOutput()
+    {
+        if (_out is not null) return;
+        _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(ReplySound.SampleRate, 1)) { ReadFully = true };
+        _out = new WaveOutEvent { DesiredLatency = 90, NumberOfBuffers = 3 };
+        _out.Init(new SampleToWaveProvider16(_mixer));
+        _out.Play();
+    }
+
+    private void DisposeOutput()
+    {
+        try { _out?.Dispose(); } catch (Exception) { }
+        _out = null;
+        _mixer = null;
+    }
+
+    public void Dispose()
+    {
+        Stop();
+        DisposeOutput();
     }
 }

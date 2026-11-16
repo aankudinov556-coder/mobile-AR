@@ -1,10 +1,10 @@
 namespace Vera.LocalAI;
 
-/// <summary>Что за файл: языковая модель, модель распознавания, голос, ускоритель.</summary>
-public enum AssetKind { Llm, Vosk, Whisper, PiperEngine, PiperVoice, Backend }
+/// <summary>Что за файл: языковая модель, модель распознавания, ускоритель.</summary>
+public enum AssetKind { Llm, Vosk, Whisper, Backend }
 
 /// <summary>
-/// Скачиваемый файл. <see cref="Files"/> — несколько частей (например, голос Piper = .onnx + .onnx.json).
+/// Скачиваемый файл. <see cref="Files"/> — несколько частей (например, модель + словарь).
 /// <see cref="Extract"/>: zip/nupkg распаковывается в папку <see cref="Folder"/> (берутся файлы из <see cref="ExtractPrefix"/>).
 /// </summary>
 public sealed record AssetInfo(
@@ -80,14 +80,6 @@ public static class ModelCatalog
             "Точнее small, но в 3 раза медленнее.", 1530,
             new[] { new AssetFile(Hf + "ggerganov/whisper.cpp/resolve/main/ggml-medium.bin", "ggml-medium.bin") }),
 
-        new AssetInfo("piper", AssetKind.PiperEngine, "Piper — офлайн-голос",
-            "Программа синтеза речи (22 МБ). Голос качается отдельно.", 22,
-            new[] { new AssetFile("https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip", "piper_windows_amd64.zip") },
-            Extract: true, ExtractPrefix: "piper/", Folder: "piper"),
-        PiperVoice("ru_RU-irina-medium", "Ирина", "Женский, спокойный."),
-        PiperVoice("ru_RU-denis-medium", "Денис", "Мужской."),
-        PiperVoice("ru_RU-dmitri-medium", "Дмитрий", "Мужской, низкий."),
-        PiperVoice("ru_RU-ruslan-medium", "Руслан", "Мужской, бодрый."),
     };
 
     /// <summary>Ускорение на видеокарте — нативные библиотеки llama.cpp из пакетов LLamaSharp на nuget.org.</summary>
@@ -108,16 +100,4 @@ public static class ModelCatalog
     public static AssetInfo? Get(string id) => All.FirstOrDefault(a => a.Id == id);
 
     public static AssetInfo? WhisperFor(string size) => Get("whisper-" + (string.IsNullOrWhiteSpace(size) ? "small" : size));
-
-    public static AssetInfo? PiperVoiceFor(string voice) => Get(voice);
-
-    private static AssetInfo PiperVoice(string id, string name, string note)
-    {
-        // ru_RU-irina-medium → ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx
-        var parts = id.Split('-');
-        var path = $"{parts[0][..2]}/{parts[0]}/{parts[1]}/{parts[2]}/{id}";
-        var root = Hf + "rhasspy/piper-voices/resolve/v1.0.0/" + path;
-        return new AssetInfo(id, AssetKind.PiperVoice, "Голос: " + name, note, 63,
-            new[] { new AssetFile(root + ".onnx", id + ".onnx"), new AssetFile(root + ".onnx.json", id + ".onnx.json") });
-    }
 }

@@ -735,6 +735,8 @@ public sealed partial class SettingsPanel : Grid
         ShowIf(oField, s => s.Stt.Provider == "openai");
         ShowIf(gField, s => s.Stt.Provider == "groq");
         var whisperSub = Ui.Sub(Ui.Muted("Модель распознавания работает на процессоре. small — лучший баланс для русского."), WhisperRows());
+        if (!System.Runtime.Intrinsics.X86.Avx.IsSupported)
+            Ui.CardBody(whisperSub).Children.Insert(0, Ui.Note("В этом процессоре нет AVX — Whisper здесь будет очень медленным. Лучше выбрать «На этом ПК, быстро»: оно работает на любом процессоре.", false));
         ShowIf(whisperSub, s => s.Stt.Provider == "whisper");
         var streamSub = Ui.Sub(
             Ui.Muted("Текст готов почти сразу после паузы — без интернета и ключей. Нужна модель для языка распознавания.", 12),

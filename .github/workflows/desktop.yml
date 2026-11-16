@@ -80,6 +80,7 @@ jobs:
             'out/Vera/Vera.exe',
             'out/Vera/runtimes/win-x64/native/avx2/llama.dll',
             'out/Vera/runtimes/win-x64/whisper.dll',
+            'out/Vera/runtimes/noavx/win-x64/whisper.dll',
             'out/Vera/libvosk.dll',
             'out/Vera/onnxruntime.dll',
             'out/Vera/sherpa-onnx-c-api.dll',

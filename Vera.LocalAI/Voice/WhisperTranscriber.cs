@@ -1,4 +1,5 @@
 using System.Text;
+using Vera.Core;
 using Whisper.net;
 
 namespace Vera.LocalAI.Voice;
@@ -32,7 +33,17 @@ public sealed class WhisperTranscriber : IDisposable
             if (_factory is null || _loadedPath != modelPath)
             {
                 _factory?.Dispose();
-                _factory = await Task.Run(() => WhisperFactory.FromPath(modelPath), ct).ConfigureAwait(false);
+                try
+                {
+                    _factory = await Task.Run(() => WhisperFactory.FromPath(modelPath), ct).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    // нативная библиотека не загрузилась (процессор без AVX, нет VC++ и т.п.) — предлагаем замену
+                    throw new InvalidOperationException(
+                        L10n.T("Whisper не запустился на этом ПК. Выбери «На этом ПК, быстро» в Настройки → Голос и слух — оно работает на любом процессоре.") +
+                        " (" + e.Message + ")", e);
+                }
                 _loadedPath = modelPath;
             }
             var b = _factory.CreateBuilder()

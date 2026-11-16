@@ -58,12 +58,13 @@
   -->
   <Target Name="VeraTrimForeignNatives" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' == 'win-x64'">
     <ItemGroup>
-      <_VeraForeignFile Include="$(PublishDir)runtimes\**\*" Exclude="$(PublishDir)runtimes\win-x64\**\*" />
+      <_VeraForeignFile Include="$(PublishDir)runtimes\**\*" Exclude="$(PublishDir)runtimes\win-x64\**\*;$(PublishDir)runtimes\noavx\win-x64\**\*" />
       <_VeraForeignFile Include="$(PublishDir)*.so;$(PublishDir)*.dylib;$(PublishDir)*.metal;$(PublishDir)*.lib" />
       <_VeraForeignDir Include="linux-x64;linux-arm;linux-arm64;linux-musl-x64;linux-musl-arm64;osx-x64;osx-arm64;macos-x64;macos-arm64;win-arm64;win-x86;win-arm;browser-wasm;maccatalyst" />
     </ItemGroup>
     <Delete Files="@(_VeraForeignFile)" />
     <RemoveDir Directories="@(_VeraForeignDir->'$(PublishDir)runtimes\%(Identity)')" />
+    <RemoveDir Directories="@(_VeraForeignDir->'$(PublishDir)runtimes\noavx\%(Identity)')" />
     <Message Importance="high" Text="Вера: убрано чужих нативных файлов: @(_VeraForeignFile-&gt;Count())" />
   </Target>
 

@@ -14,6 +14,9 @@ using System.Windows.Threading;
 using Vera.Core;
 using Vera.Core.Agent;
 using Vera.Core.Providers;
+using Vera.Core.Speech;
+using System.Windows.Input;
+using System.Text;
 using Vera.Desktop.Platform;
 using Vera.Desktop.UI;
 
@@ -49,6 +52,11 @@ public sealed class ChatWindow : Window
     private bool _positioned;
     private bool _typing;
     private string _current = "chat";
+    private readonly VoiceModeView _voiceView;
+    private readonly VoiceModeFlow _flow;
+    private readonly DispatcherTimer _flowTimer;
+    private readonly StringBuilder _voiceAnswer = new();
+    private bool _voiceLeaving;
 
     public ChatWindow(AppHost host)
     {
@@ -77,12 +85,13 @@ public sealed class ChatWindow : Window
         });
 
         // ------------------------------------------------------------ кнопки окна (на сцене справа)
+        var voiceBtn = Ui.IconButton("voice", "Голосовой режим (Ctrl+Space)", () => EnterVoiceMode(), 34, 16);
         var newChat = Ui.IconButton("edit", "Новый диалог", () => ChatPanel?.NewChat(), 34, 16);
         _sizeBtn = Ui.IconButton("shrink", "Узкий режим — рядом с Верой", ToggleCompact, 34, 16);
         var min = Ui.IconButton("minus", "Свернуть", () => WindowState = WindowState.Minimized, 34, 16);
         var close = Ui.IconButton("x", "Закрыть", Hide, 34, 16);
-        foreach (var b in new[] { newChat, _sizeBtn, min, close }) WindowChrome.SetIsHitTestVisibleInChrome(b, true);
-        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, Children = { newChat, _sizeBtn, min, close } };
+        foreach (var b in new[] { voiceBtn, newChat, _sizeBtn, min, close }) WindowChrome.SetIsHitTestVisibleInChrome(b, true);
+        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, Children = { voiceBtn, newChat, _sizeBtn, min, close } };
 
         _stage = new StageView(() => _host.Core.Settings.Current.Skin, windowButtons);
 
@@ -232,6 +241,18 @@ public sealed class ChatWindow : Window
         grid.Children.Add(_rail);
         grid.Children.Add(main);
         grid.Children.Add(_today);
+
+        // голосовой режим — поверх чата и панели «Сегодня», панель разделов остаётся
+        _flow = new VoiceModeFlow(() => _host.Core.Settings.Current.VoiceMode.ExitAfterSeconds);
+        _flow.Changed += () => _voiceView?.SetPhase(_flow.Phase, _flow.Heard, _flow.Partial);
+        _voiceView = new VoiceModeView(host, () => ExitVoiceMode(), VoiceMic);
+        Grid.SetColumn(_voiceView, 1);
+        Grid.SetColumnSpan(_voiceView, 2);
+        grid.Children.Add(_voiceView);
+        WindowChrome.SetIsHitTestVisibleInChrome(_voiceView, true);
+        _flowTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _flowTimer.Tick += (_, _) => Run(_flow.Tick(DateTimeOffset.Now));
+        PreviewKeyDown += OnVoiceKeys;
         _root = new Border { BorderThickness = new Thickness(2.5), BorderBrush = Brushes.Black, Child = grid };
         Content = _root;
 
@@ -452,12 +473,158 @@ public sealed class ChatWindow : Window
         }
         ChatPanel.OnAgentEvent(e);
         if (e is TurnStarted or TurnEnded or TurnFailed) UpdateStatus();
+        if (_flow.Active) OnVoiceAgentEvent(e);
+    }
+
+    // ================================================================== голосовой режим
+
+    public bool VoiceModeActive => _flow.Active;
+
+    private VoiceModeSettings VM => _host.Core.Settings.Current.VoiceMode;
+
+    /// <summary>Открыть голосовой режим и начать слушать (alreadyListening — запись уже идёт, например после «Вера»).</summary>
+    public void EnterVoiceMode(bool alreadyListening = false)
+    {
+        if (_flow.Active && !_voiceLeaving) return;
+        _voiceLeaving = false;
+        if (_current != "chat") { _tabs["chat"].IsChecked = true; ShowTab("chat"); }
+        _voiceAnswer.Clear();
+        _voiceView.SetAnswer("");
+        var action = _flow.Enter(DateTimeOffset.Now);
+        _voiceView.Enter(VM.Animation);
+        _voiceView.SetPhase(_flow.Phase, "", "");
+        _flowTimer.Start();
+        if (_host.Core.Agent.IsBusy) _flow.OnTurnStarted();
+        else if (!alreadyListening) Run(action);
+        else _flow.OnListening();
+    }
+
+    public void ExitVoiceMode()
+    {
+        if (!_flow.Active) return;
+        _flow.Exit();
+        _flowTimer.Stop();
+        _host.Voice.CancelListening();
+        _voiceLeaving = true;
+        _voiceView.Leave(VM.Animation, () =>
+        {
+            _voiceLeaving = false;
+            ChatPanel.FocusInput();
+        });
+    }
+
+    private void Run(VoiceModeAction action)
+    {
+        switch (action)
+        {
+            case VoiceModeAction.StartListening:
+                if (!_host.Core.Agent.IsBusy) _host.Voice.StartListening();
+                break;
+            case VoiceModeAction.Exit:
+                ExitVoiceMode();
+                break;
+        }
+    }
+
+    /// <summary>Большая кнопка: слушает — закончить фразу; думает или отвечает — остановить; иначе — слушать.</summary>
+    private void VoiceMic()
+    {
+        if (_flow.Phase is VoicePhase.Thinking or VoicePhase.Answering)
+        {
+            _host.Core.Agent.Stop();
+            _host.Voice.StopSpeaking();
+            return;
+        }
+        _host.Voice.ListenToggle();
+    }
+
+    private void OnVoiceKeys(object sender, KeyEventArgs e)
+    {
+        if (_flow.Active && e.Key == Key.Escape)
+        {
+            ExitVoiceMode();
+            e.Handled = true;
+            return;
+        }
+        if (Accelerator.Matches(_host.Core.Settings.Current.Hotkeys.VoiceMode, e))
+        {
+            if (_flow.Active) ExitVoiceMode(); else EnterVoiceMode();
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Состояние записи (из VoiceController, в потоке UI).</summary>
+    public void OnVoiceState(RecorderState st, string? reason)
+    {
+        if (!_flow.Active) return;
+        var now = DateTimeOffset.Now;
+        switch (st)
+        {
+            case RecorderState.Listening: _flow.OnListening(); break;
+            case RecorderState.Recording: _flow.OnSpeech(now); break;
+            case RecorderState.Off or RecorderState.Wake when reason is "timeout" or "short":
+                Run(_flow.OnNothingHeard(now));
+                break;
+        }
+    }
+
+    /// <summary>Фраза оказалась пустой или распознавание не удалось — слушать дальше (или выйти после тишины).</summary>
+    public void OnVoiceNothing()
+    {
+        if (_flow.Active) Run(_flow.OnNothingHeard(DateTimeOffset.Now));
+    }
+
+    public void OnVoicePartial(string text)
+    {
+        if (_flow.Active) _flow.OnSpeech(DateTimeOffset.Now, text);
+    }
+
+    /// <summary>Фраза распознана — уходит Вере. Вызывается и без голосового режима (например, «Вера, …» открывает его).</summary>
+    public void OnVoiceHeard(string text)
+    {
+        if (_flow.Active) _flow.OnHeard(DateTimeOffset.Now, text);
+    }
+
+    public void OnVoiceLevel(float level)
+    {
+        if (_flow.Active) _voiceView.SetLevel(level);
+    }
+
+    private void OnVoiceAgentEvent(AgentEvent e)
+    {
+        var now = DateTimeOffset.Now;
+        switch (e)
+        {
+            case TurnStarted:
+                _voiceAnswer.Clear();
+                _voiceView.SetAnswer("");
+                _flow.OnTurnStarted();
+                break;
+            case EmotionChanged em:
+                _voiceView.SetEmotion(em.Emotion);
+                break;
+            case TextDelta d:
+                _voiceAnswer.Append(d.Delta);
+                _voiceView.SetAnswer(TagFilter.Strip(_voiceAnswer.ToString()).Trim());
+                _flow.OnAnswerText();
+                break;
+            case TurnEnded te:
+                if (te.Text.Length > 0) _voiceView.SetAnswer(TagFilter.Strip(te.Text).Trim());
+                _voiceView.SetEmotion(te.Emotion);
+                _flow.OnTurnEnded(now);
+                break;
+            case TurnFailed tf:
+                if (!tf.Aborted) _voiceView.SetAnswer("⚠️ " + tf.Message);
+                _flow.OnTurnEnded(now);
+                break;
+        }
     }
 
     /// <summary>Вера говорит голосом — сцена шевелит ртом.</summary>
     public void SetSpeaking(bool speaking)
     {
         if (!ChatPanel.Busy) _stage.SetTalking(speaking);
+        if (_flow.Active) _flow.OnSound(speaking, DateTimeOffset.Now);
     }
 
     /// <summary>Скин сменился: новая поза на сцене и аватарки в чате.</summary>

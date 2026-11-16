@@ -41,6 +41,10 @@ public sealed class VoiceController
     public event Action<string>? Heard;
     /// <summary>Слова по ходу речи (распознавание Android), в UI-потоке.</summary>
     public event Action<string>? PartialText;
+    /// <summary>Фраза пустая или неразборчивая (UI-поток) — голосовой режим слушает дальше.</summary>
+    public event Action? NothingHeard;
+    /// <summary>Услышала своё имя (UI-поток) — можно открыть голосовой режим.</summary>
+    public event Action? WakeHeard;
     /// <summary>Сообщение для облачка: (текст, заголовок) (UI-поток).</summary>
     public event Action<string, string?>? Notice;
 
@@ -198,7 +202,7 @@ public sealed class VoiceController
         var meaningful = new string((text ?? "").Where(char.IsLetterOrDigit).ToArray());
         if (meaningful.Length < 2)
         {
-            Post(() => Notice?.Invoke(_core.Line("notHeard"), null));
+            Post(() => { Notice?.Invoke(_core.Line("notHeard"), null); NothingHeard?.Invoke(); });
             return;
         }
         Post(() => Heard?.Invoke(text!.Trim()));
@@ -227,6 +231,7 @@ public sealed class VoiceController
     {
         var cmd = VoiceRecorder.MatchWake(text, _core.Settings.Current.Voice.WakePhrases);
         if (cmd is null) return;
+        Post(() => WakeHeard?.Invoke());
         var meaningful = new string(cmd.Where(char.IsLetterOrDigit).ToArray());
         if (meaningful.Length >= 3)
         {
@@ -387,6 +392,7 @@ public sealed class VoiceController
             var cmd = VoiceRecorder.MatchWake(text, _core.Settings.Current.Voice.WakePhrases);
             if (cmd is not null)
             {
+                WakeHeard?.Invoke();
                 var meaningful = new string(cmd.Where(char.IsLetterOrDigit).ToArray());
                 if (meaningful.Length >= 3)
                 {

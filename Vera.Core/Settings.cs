@@ -105,6 +105,8 @@ public sealed class VeraSettings
     public SttSettings Stt { get; set; } = new();
     /// <summary>Звук, пока Вера печатает ответ (вместо синтеза речи, v2.5).</summary>
     public ReplySoundSettings Sound { get; set; } = new();
+    /// <summary>Голосовой режим: экран для разговора (v2.5).</summary>
+    public VoiceModeSettings VoiceMode { get; set; } = new();
     public VoiceSettings Voice { get; set; } = new();
     public HotkeySettings Hotkeys { get; set; } = new();
     public PetSettings Pet { get; set; } = new();
@@ -161,6 +163,16 @@ public sealed class ReplySoundSettings
     public string Volume { get; set; } = "mid";
 }
 
+public sealed class VoiceModeSettings
+{
+    /// <summary>Открывать голосовой режим, когда зовут «Вера».</summary>
+    public bool OpenOnWake { get; set; } = true;
+    /// <summary>Анимация перехода: "full" (600 мс) | "fast" (200 мс) | "off"</summary>
+    public string Animation { get; set; } = "full";
+    /// <summary>Вернуться в чат после стольких секунд тишины; 0 — никогда.</summary>
+    public int ExitAfterSeconds { get; set; } = 10;
+}
+
 public sealed class VoiceSettings
 {
     public bool WakeWord { get; set; }
@@ -181,6 +193,8 @@ public sealed class HotkeySettings
     public string ToggleChat { get; set; } = "Ctrl+Alt+V";
     public string Talk { get; set; } = "Ctrl+Alt+Space";
     public string Screenshot { get; set; } = "Ctrl+Alt+S";
+    /// <summary>Голосовой режим (только пока окно Веры активно).</summary>
+    public string VoiceMode { get; set; } = "Ctrl+Space";
 }
 
 public sealed class PetSettings

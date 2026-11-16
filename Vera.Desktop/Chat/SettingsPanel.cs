@@ -75,6 +75,7 @@ public sealed partial class SettingsPanel : Grid
         Add(root, SearchCard(), "brain");
         Add(root, VoiceCard(), "voice");
         Add(root, SttCard(), "voice");
+        Add(root, VoiceModeCard(), "voice");
 
         _hotkeyErrors = Ui.Text("", 12, "Err");
         _hotkeyErrorsBox = Ui.Note("", error: true);
@@ -671,6 +672,46 @@ public sealed partial class SettingsPanel : Grid
             list,
             Ui.Field("Громкость", vol),
             test);
+    }
+
+    // ================================================================== голосовой режим
+
+    private Border VoiceModeCard()
+    {
+        var anim = new StackPanel();
+        foreach (var (id, title, about) in new[]
+                 {
+                     ("full", "Полная", "600 мс, Вера вылетает в центр"),
+                     ("fast", "Быстрая", "200 мс, просто смена экрана"),
+                     ("off", "Без анимации", ""),
+                 })
+        {
+            var rb = Ui.Radio(about.Length > 0 ? L10n.T(title) + " · " + L10n.T(about) : title, "voiceAnim", "Segment");
+            rb.HorizontalContentAlignment = HorizontalAlignment.Left;
+            rb.Margin = new Thickness(0, 0, 0, 6);
+            var aid = id;
+            rb.Checked += (_, _) =>
+            {
+                if (_loading || S.VoiceMode.Animation == aid) return;
+                Save(s => s.VoiceMode.Animation = aid);
+            };
+            _refreshers.Add(() => { if ((S.VoiceMode.Animation == aid) != (rb.IsChecked == true)) rb.IsChecked = S.VoiceMode.Animation == aid; });
+            anim.Children.Add(rb);
+        }
+        var exit = Combo(new[] { ("10", "10 с"), ("30", "30 с"), ("0", "Никогда") },
+            s => s.VoiceMode.ExitAfterSeconds.ToString(CultureInfo.InvariantCulture),
+            (s, v) => s.VoiceMode.ExitAfterSeconds = int.Parse(v, CultureInfo.InvariantCulture));
+        var tryBtn = Ui.Button("Открыть голосовой режим", "Btn.Ghost", "voice", () => _window.EnterVoiceMode());
+        tryBtn.HorizontalAlignment = HorizontalAlignment.Left;
+        tryBtn.Margin = new Thickness(0, 6, 0, 0);
+        return Ui.Card(
+            Ui.Title("🎙️ Голосовой режим"),
+            Ui.Muted("Экран для разговора: Вера в центре, слова видны, пока говоришь. После ответа она сама снова слушает.", 12.5),
+            Toggle("Открывать голосовой режим, когда зову «Вера»", s => s.VoiceMode.OpenOnWake, (s, v) => s.VoiceMode.OpenOnWake = v),
+            Ui.Field("Анимация перехода", anim),
+            Ui.Field("Вернуться в чат после тишины", exit),
+            Ui.Muted(L10n.F("Клавиши в окне Веры: {0}. Выход — Esc. Если в Windows выключены анимации, переход всегда мгновенный.", Accelerator.Pretty(S.Hotkeys.VoiceMode)), 12),
+            tryBtn);
     }
 
     // ================================================================== STT

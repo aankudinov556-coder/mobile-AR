@@ -179,6 +179,16 @@ public sealed partial class VoiceController : IDisposable
         else StartListening();
     }
 
+    /// <summary>Перестать слушать команду без отправки (выход из голосового режима).</summary>
+    public void CancelListening()
+    {
+        if (_rec.Mode == ListenMode.Command) lock (_recLock) _rec.Cancel("cancel");
+        StopLive();
+    }
+
+    /// <summary>Услышала своё имя («Вера») — хост может открыть голосовой режим.</summary>
+    public event Action? WakeHeard;
+
     /// <summary>Включить/выключить постоянное прослушивание по настройке voice.wakeWord, сменить микрофон.</summary>
     public void SyncSettings()
     {
@@ -266,6 +276,7 @@ public sealed partial class VoiceController : IDisposable
     {
         if (!_voskListening || Speaker.Active || (TurnActive?.Invoke() ?? false) || _rec.Mode == ListenMode.Command) return;
         Interaction?.Invoke();
+        WakeHeard?.Invoke();
         StartListening(); // команда после имени записывается сразу
     }
 
@@ -336,6 +347,7 @@ public sealed partial class VoiceController : IDisposable
             var rest = VoiceRecorder.MatchWake(text, S.Voice.WakePhrases);
             if (rest is null) return;
             Interaction?.Invoke();
+            WakeHeard?.Invoke();
             if (Punct().Replace(rest, "").Length >= 3)
             {
                 if (S.Voice.Chime) Sfx.ListenStart();

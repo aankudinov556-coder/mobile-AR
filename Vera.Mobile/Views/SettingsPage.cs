@@ -154,6 +154,23 @@ public sealed class SettingsPage : ContentPage
             Ui.MutedLabel(L10n.T("Долгий тап по Вере или кнопка микрофона — сказать одну фразу.")));
 
         // ------------------------------------------------ напоминания
+        var voiceModeCard = Ui.Card(
+            Ui.H3(L10n.T("🎙️ Голосовой режим")),
+            Ui.MutedLabel(L10n.T("Экран для разговора: Вера в центре, слова видны, пока говоришь. После ответа она сама снова слушает.")),
+            Ui.Toggle(L10n.T("Открывать голосовой режим, когда зову «Вера»"), S.VoiceMode.OpenOnWake, v => Set(s => s.VoiceMode.OpenOnWake = v)),
+            Ui.Field(L10n.T("Анимация перехода"), Choice(
+                new[] { "full", "fast", "off" },
+                new[] { L10n.T("Полная") + " · " + L10n.T("600 мс, Вера вылетает в центр"), L10n.T("Быстрая") + " · " + L10n.T("200 мс, просто смена экрана"), L10n.T("Без анимации") },
+                s => s.VoiceMode.Animation, (s, v) => s.VoiceMode.Animation = v)),
+            Ui.Field(L10n.T("Вернуться в чат после тишины"), Choice(
+                new[] { "10", "30", "0" },
+                new[] { L10n.T("10 с"), L10n.T("30 с"), L10n.T("Никогда") },
+                s => s.VoiceMode.ExitAfterSeconds.ToString(CultureInfo.InvariantCulture), (s, v) => s.VoiceMode.ExitAfterSeconds = int.Parse(v, CultureInfo.InvariantCulture))),
+            Ui.Ghost(L10n.T("Открыть голосовой режим"), async (_, _) =>
+            {
+                try { await Navigation.PushModalAsync(new VoiceModePage(), false); } catch { }
+            }));
+
         var remCard = Ui.Card(
             Ui.H3(L10n.T("⏰ Напоминания")),
             Ui.Toggle(L10n.T("Уведомление Android"), S.Reminders.Notification, v => Set(s => s.Reminders.Notification = v)),
@@ -194,7 +211,7 @@ public sealed class SettingsPage : ContentPage
             {
                 Spacing = 14,
                 Padding = new Thickness(14, 12, 14, 32),
-                Children = { _welcome, modelCard, keysCard, syncCard, personaCard, voiceCard, sttCard, remCard, capsCard, petCard, about },
+                Children = { _welcome, modelCard, keysCard, syncCard, personaCard, voiceCard, sttCard, voiceModeCard, remCard, capsCard, petCard, about },
             },
         };
         _loading = false;

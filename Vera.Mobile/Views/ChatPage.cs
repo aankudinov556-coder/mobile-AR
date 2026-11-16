@@ -394,6 +394,10 @@ public sealed class ChatPage : ContentPage
         _voice.StateChanged += OnVoiceState;
         _voice.Level += l => _micLevel = l;
         _voice.Heard += text => Send(text, "voice");
+        _voice.WakeHeard += () =>
+        {
+            if (Core.Settings.Current.VoiceMode.OpenOnWake) _ = OpenVoiceModeAsync(true);
+        };
         _voice.PartialText += text => ShowBubble(text, L10n.T("🎙️ слушаю"), sticky: true, kind: "voice");
         _voice.Notice += (text, head) => { _vera.SetEmotion("sad", 5000); ShowBubble(text, head, ms: 8000); };
 
@@ -752,13 +756,23 @@ public sealed class ChatPage : ContentPage
     }
 
     /// <summary>Меню «⋯» в шапке: новый диалог, синхронизация, память.</summary>
+    /// <summary>Открыть голосовой режим (alreadyListening — запись уже идёт после «Вера»).</summary>
+    private async Task OpenVoiceModeAsync(bool alreadyListening)
+    {
+        Touch();
+        if (Navigation.ModalStack.Any(p => p is VoiceModePage)) return;
+        try { await Navigation.PushModalAsync(new VoiceModePage(alreadyListening), false); }
+        catch (Exception) { /* страница уже открывается */ }
+    }
+
     private async Task MoreMenuAsync()
     {
         Touch();
-        const string newChat = "Новый диалог", sync = "Синхронизация с ПК", memory = "Что Вера помнит";
-        var choice = await Ui.ActionSheetAsync(this, "Ещё", null, newChat, sync, memory);
+        const string voiceMode = "Голосовой режим", newChat = "Новый диалог", sync = "Синхронизация с ПК", memory = "Что Вера помнит";
+        var choice = await Ui.ActionSheetAsync(this, "Ещё", null, voiceMode, newChat, sync, memory);
         switch (choice)
         {
+            case voiceMode: await OpenVoiceModeAsync(false); break;
             case newChat: await NewChatAsync(); break;
             case sync: await OpenPage(new SyncPage()); break;
             case memory: await OpenPage(new MemoryPage()); break;

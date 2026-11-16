@@ -62,6 +62,21 @@ public static class Accelerator
         return true;
     }
 
+    /// <summary>Нажатие в окне совпадает с сочетанием (для клавиш, которые работают только в окне Веры).</summary>
+    public static bool Matches(string? accel, KeyEventArgs e)
+    {
+        if (!TryParse(accel, out var mods, out var vk)) return false;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if ((uint)KeyInterop.VirtualKeyFromKey(key) != vk) return false;
+        var m = Keyboard.Modifiers;
+        uint have = 0;
+        if (m.HasFlag(ModifierKeys.Control)) have |= Native.MOD_CONTROL;
+        if (m.HasFlag(ModifierKeys.Alt)) have |= Native.MOD_ALT;
+        if (m.HasFlag(ModifierKeys.Shift)) have |= Native.MOD_SHIFT;
+        if (m.HasFlag(ModifierKeys.Windows)) have |= Native.MOD_WIN;
+        return have == mods;
+    }
+
     /// <summary>«CommandOrControl+Alt+V» → «Ctrl + Alt + V».</summary>
     public static string Pretty(string? accel)
     {

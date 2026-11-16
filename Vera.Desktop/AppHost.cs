@@ -135,7 +135,23 @@ public sealed class AppHost : IToolHost
         if (S.FirstRun && Autostart.IsEnabled() && !S.Autostart) Core.Settings.Update(s => s.Autostart = true);
         _prev = Snapshot.Of(S);
 
-        Voice.Send = (text, source) => Send(text, null, source);
+        Voice.Send = (text, source) =>
+        {
+            Chat.OnVoiceHeard(text);
+            Send(text, null, source);
+        };
+        // голосовой режим: состояние записи, слова по ходу речи, уровень микрофона
+        Voice.StateChanged += (st, reason) => Chat.OnVoiceState(st, reason);
+        Voice.PartialText += t => Chat.OnVoicePartial(t);
+        Voice.MicLevel += l => Chat.OnVoiceLevel(l);
+        Voice.NotHeard += () => Chat.OnVoiceNothing();
+        Voice.Problem += (_, _) => Chat.ExitVoiceMode(); // микрофон или распознавание сломались — не крутить перезапуск
+        Voice.WakeHeard += () =>
+        {
+            if (!S.VoiceMode.OpenOnWake) return;
+            ShowChat("chat");
+            Chat.EnterVoiceMode(alreadyListening: true);
+        };
         Voice.TurnActive = () => Core.Agent.IsBusy || Pet.HasActiveTurn;
 
         Core.Agent.Event += e => _ui.BeginInvoke(() => OnAgentEvent(e));
